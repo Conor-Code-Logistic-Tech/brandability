@@ -1,7 +1,9 @@
+functions-framework
 # Core dependencies
 fastapi
 uvicorn
 pydantic
+firebase-admin
 
 # Trademark similarity calculations
 python-levenshtein
@@ -9,6 +11,9 @@ metaphone
 
 # Added for Gemini integration
 google-genai
+google-cloud-core
+google-api-core
+google-cloud-aiplatform
 
 # Client utilities
 httpx
