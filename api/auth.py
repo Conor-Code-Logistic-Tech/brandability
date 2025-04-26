@@ -5,13 +5,12 @@ This module provides a FastAPI dependency to verify Firebase ID tokens
 and ensure that API requests are authenticated.
 """
 
-import os
 import logging
 from functools import lru_cache
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import firebase_admin
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from firebase_admin import auth, credentials
 
 # Configure logging
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Use HTTPBearer security scheme for extracting the token
 bearer_scheme = HTTPBearer()
 
-@lru_cache()
+@lru_cache
 def initialize_firebase_admin():
     """
     Initializes the Firebase Admin SDK.
@@ -76,7 +75,7 @@ async def get_current_user(
     try:
         # Ensure Firebase Admin is initialized before verifying tokens
         initialize_firebase_admin()
-        
+
         # Verify the ID token
         decoded_token = auth.verify_id_token(token.credentials)
         # Optionally, you could fetch the full UserRecord if needed:
@@ -100,7 +99,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer error=\"invalid_token\""},
         )
     except auth.UserNotFoundError:
-         logger.warning(f"User not found for token.")
+         logger.warning("User not found for token.")
          raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User associated with token not found.",
@@ -112,4 +111,4 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not process authentication token.",
-        ) 
+        )

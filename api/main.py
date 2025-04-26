@@ -5,14 +5,20 @@ This module provides HTTP endpoints for comparing trademarks and predicting
 opposition outcomes using LLM-powered similarity analysis and reasoning.
 """
 
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware  # Import CORS middleware
-from pydantic import BaseModel
 import firebase_admin
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware  # Import CORS middleware
 
+from api.auth import get_current_user, initialize_firebase_admin
 from trademark_core import models
 from trademark_core.llm import generate_full_prediction
-from api.auth import initialize_firebase_admin, get_current_user
+
+# Import similarity calculation functions
+from trademark_core.similarity import (
+    calculate_aural_similarity,
+    calculate_conceptual_similarity,
+    calculate_visual_similarity,
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -23,6 +29,7 @@ app = FastAPI(
 
 # --- CORS Configuration ---
 # Define allowed origins. Adjust as necessary for production.
+# For development, allow localhost. You might want to add your deployed frontend URL later.
 # For development, allow localhost. You might want to add your deployed frontend URL later.
 origins = [
     "http://localhost:8080",
@@ -68,12 +75,32 @@ async def predict_opposition(
         CasePrediction: Detailed prediction results with mark comparison and outcome
     """
     try:
-        # Use the LLM-centric approach to generate the full prediction
-        prediction = await generate_full_prediction(request)
+        # 1. Calculate individual similarities first
+        visual_score = calculate_visual_similarity(
+            request.applicant.wordmark,
+            request.opponent.wordmark
+        )
+        aural_score = calculate_aural_similarity(
+            request.applicant.wordmark,
+            request.opponent.wordmark
+        )
+        # Conceptual similarity is async
+        conceptual_score = await calculate_conceptual_similarity(
+            request.applicant.wordmark,
+            request.opponent.wordmark
+        )
+
+        # 2. Call the LLM with pre-calculated scores
+        prediction = await generate_full_prediction(
+            request=request,
+            visual_score=visual_score,
+            aural_score=aural_score,
+            conceptual_score=conceptual_score
+        )
         return prediction
     except Exception as e:
         # Handle any errors from the LLM process
         raise HTTPException(
             status_code=500,
             detail=f"Error generating prediction: {str(e)}"
-        ) 
+        )
