@@ -20,7 +20,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+model-context/
 # Environment
 .env
 .venv/
@@ -47,3 +47,4 @@ htmlcov/
 Procfile
 pyproject.toml
 ruff_cache/
+.cursorrules

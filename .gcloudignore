@@ -13,3 +13,5 @@ ruff_cache/
 pytest_cache/
 api/__pycache__/
 trademark_core/__pycache__/
+model-context/
+.cursorrules
