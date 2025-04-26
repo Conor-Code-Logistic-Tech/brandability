@@ -21,12 +21,14 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Environment
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/
+.env.local
+.env.yaml
 
 # IDE
 .idea/
@@ -41,3 +43,7 @@ htmlcov/
 
 # Misc
 .DS_Store 
+.gcloudignore
+Procfile
+pyproject.toml
+ruff_cache/

@@ -5,7 +5,6 @@ This module stores formatted string constants for prompts sent to the Gemini LLM
 ensuring consistency and easy modification.
 """
 
-
 CONCEPTUAL_SIMILARITY_PROMPT_TEMPLATE = """
 Analyze the conceptual similarity between Mark 1: '{mark1}' and Mark 2: '{mark2}'.
 Consider meaning, shared concepts, and overall commercial impression.

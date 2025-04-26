@@ -49,8 +49,8 @@ rules:
     description: >
       Respect the stack declared in the Blueprint:
         • FastAPI + Uvicorn
-        • Cloud SQL (Postgres 15 + pgvector) via asyncpg
-        • Gemini 2.5 Pro via Vertex AI
+        • Firebase
+        • Vertex AI
       New deps must be lightweight, maintained, and justified in a bullet list.
     enforcementLevel: medium
 
@@ -97,10 +97,10 @@ rules:
     description: >
       As Cursor AI you may:
         • run shell commands (e.g. `pytest`, `ruff`)
-        • read / modify any repo file
+        • read / modify any repo file except any .env files
         • search the web for factual data
       Log commands you execute and why, so others can reproduce.
-    enforcementLevel: low
+    enforcementLevel: high
 
 indexing:
   # Offer Cursor extra context by default
