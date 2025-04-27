@@ -28,15 +28,10 @@ app = FastAPI(
 )
 
 # --- CORS Configuration ---
-# Define allowed origins. Adjust as necessary for production.
-# For development, allow localhost. You might want to add your deployed frontend URL later.
-# For development, allow localhost. You might want to add your deployed frontend URL later.
 origins = [
-    "http://localhost:8080",
-    "https://trademark-prediction-system.web.app"
-    # Allow localhost for frontend development
-    # Add your production frontend URL here when deployed, e.g.:
-    # "https://your-frontend-domain.com",
+    "localhost",
+    "https://trademark-prediction-system.web.app",
+    "https://europe-west2-trademark-prediction-system.cloudfunctions.net/trademark-api"
 ]
 
 app.add_middleware(
@@ -46,10 +41,8 @@ app.add_middleware(
     allow_methods=["*"], # Allow all methods (GET, POST, OPTIONS, etc.)
     allow_headers=["*"]  # Allow all headers
 )
-# --- End CORS Configuration ---
 
 # Initialize Firebase Admin SDK
-# This ensures it's ready before the first request that needs it
 initialize_firebase_admin()
 
 @app.get("/health")

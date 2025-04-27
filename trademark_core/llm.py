@@ -143,7 +143,7 @@ async def generate_structured_content(
 # --- Refactored main prediction function ---
 async def generate_full_prediction(
     request: models.PredictionRequest,
-    visual_score: float, # Add pre-calculated scores as inputs
+    visual_score: float,
     aural_score: float,
     conceptual_score: float
 ) -> models.CasePrediction:

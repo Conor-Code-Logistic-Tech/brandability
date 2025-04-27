@@ -1,15 +1,17 @@
 functions-framework
+
 # Core dependencies
 fastapi
 uvicorn
 pydantic
 firebase-admin
+python-dotenv
 
 # Trademark similarity calculations
 python-levenshtein
 metaphone
 
-# Added for Gemini integration
+# Google Cloud & Vertex AI dependencies
 google-genai
 google-cloud-core
 google-api-core

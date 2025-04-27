@@ -6,6 +6,7 @@ and ensure that API requests are authenticated.
 """
 
 import logging
+import os
 from functools import lru_cache
 
 import firebase_admin
@@ -18,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Use HTTPBearer security scheme for extracting the token
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 @lru_cache
 def initialize_firebase_admin():
@@ -48,23 +49,29 @@ def initialize_firebase_admin():
         # For a critical API, you might want the app to fail startup.
         raise RuntimeError("Could not initialize Firebase Admin SDK.") from e
 
+def is_test_mode() -> bool:
+    """Return True if TEST_MODE environment variable is set to a truthy value."""
+    value = os.environ.get("TEST_MODE", "").lower()
+    return value in ("1", "true", "yes")
 
-async def get_current_user(
-    token: HTTPAuthorizationCredentials = Depends(bearer_scheme)
-) -> auth.UserRecord:
+def get_current_user(token: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
     """
-    FastAPI dependency to verify Firebase ID Token and return user info.
-
+    Dependency to get the current Firebase user.
+    Returns a dummy user if TEST_MODE is set (for tests/dev), otherwise enforces Firebase authentication.
+    
     Args:
-        token: The HTTPAuthorizationCredentials containing the bearer token.
-
-    Raises:
-        HTTPException: 401 Unauthorized if the token is missing, invalid, or expired.
-        HTTPException: 500 Internal Server Error if Firebase Admin is not initialized.
-
+        token: The HTTP Bearer token extracted from the Authorization header
+        
     Returns:
-        auth.UserRecord: The verified Firebase user object.
+        The Firebase UserRecord for the authenticated user
     """
+    if is_test_mode():
+        class DummyUser:
+            uid = "test-user"
+            email = "test@example.com"
+            display_name = "Test User"
+        return DummyUser()
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
