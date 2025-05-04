@@ -49,6 +49,136 @@ except Exception as e:
     logger.error(f"Failed to initialize Google Generative AI client: {str(e)}")
     raise
 
+# --- Mark Similarity Assessment Function ---
+async def generate_mark_similarity_assessment(
+    applicant_mark: models.Mark, 
+    opponent_mark: models.Mark,
+    visual_score: float,
+    aural_score: float
+) -> models.MarkSimilarityOutput:
+    """
+    Generate a comprehensive mark similarity assessment using the Gemini LLM.
+    
+    This function takes pre-calculated visual and aural similarity scores and uses
+    the LLM to perform a global assessment of similarity between two wordmarks,
+    following UK/EU trademark law principles.
+    
+    Args:
+        applicant_mark: The applicant's mark details
+        opponent_mark: The opponent's mark details
+        visual_score: Pre-calculated visual similarity score (0.0-1.0)
+        aural_score: Pre-calculated aural similarity score (0.0-1.0)
+        
+    Returns:
+        MarkSimilarityOutput: Structured similarity assessment across all dimensions
+        
+    Raises:
+        GoogleAPIError: If there's an issue with the Gemini API
+        ValueError: If the LLM returns empty or invalid parsed data
+    """
+    try:
+        logger.info(f"Generating mark similarity assessment: '{applicant_mark.wordmark}' vs '{opponent_mark.wordmark}'")
+        
+        # Build the prompt using the template
+        prompt = prompts.MARK_SIMILARITY_PROMPT_TEMPLATE.format(
+            applicant_wordmark=applicant_mark.wordmark,
+            opponent_wordmark=opponent_mark.wordmark,
+            visual_score=visual_score,
+            aural_score=aural_score
+        )
+        
+        # Call the LLM with the structured output schema
+        result = await generate_structured_content(
+            prompt=prompt,
+            schema=models.MarkSimilarityOutput,
+            temperature=DEFAULT_TEMPERATURE,
+            top_p=DEFAULT_TOP_P,
+            top_k=DEFAULT_TOP_K,
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS
+        )
+        
+        # Validate the result
+        validated_assessment = models.MarkSimilarityOutput.model_validate(result.model_dump())
+        logger.info(f"Successfully generated mark similarity assessment with overall similarity: {validated_assessment.overall}")
+        
+        return validated_assessment
+        
+    except GoogleAPIError as e:
+        logger.error(f"Google API error during mark similarity assessment: {str(e)}")
+        raise
+    except ValidationError as e:
+        logger.error(f"Validation failed for LLM MarkSimilarityOutput: {e}")
+        raise ValueError(f"LLM output failed validation: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error in mark similarity assessment: {str(e)}")
+        raise
+
+# --- Goods/Services Likelihood Assessment Function ---
+async def generate_gs_likelihood_assessment(
+    applicant_good: models.GoodService,
+    opponent_good: models.GoodService,
+    mark_similarity: models.MarkSimilarityOutput
+) -> models.GoodServiceLikelihoodOutput:
+    """
+    Generate a goods/services likelihood of confusion assessment using the Gemini LLM.
+    
+    This function assesses the relationship between a specific pair of goods/services
+    and determines the likelihood of confusion considering the interdependence with
+    the provided mark similarity context.
+    
+    Args:
+        applicant_good: The applicant's good/service details
+        opponent_good: The opponent's good/service details
+        mark_similarity: The mark similarity context from previous assessment
+        
+    Returns:
+        GoodServiceLikelihoodOutput: Structured assessment of G/S relationship and likelihood
+        
+    Raises:
+        GoogleAPIError: If there's an issue with the Gemini API
+        ValueError: If the LLM returns empty or invalid parsed data
+    """
+    try:
+        logger.info(f"Generating G/S likelihood assessment: '{applicant_good.term}' vs '{opponent_good.term}'")
+        
+        # Build the prompt using the template
+        prompt = prompts.GS_LIKELIHOOD_PROMPT_TEMPLATE.format(
+            applicant_term=applicant_good.term,
+            applicant_nice_class=applicant_good.nice_class,
+            opponent_term=opponent_good.term,
+            opponent_nice_class=opponent_good.nice_class,
+            mark_visual=mark_similarity.visual,
+            mark_aural=mark_similarity.aural,
+            mark_conceptual=mark_similarity.conceptual,
+            mark_overall=mark_similarity.overall
+        )
+        
+        # Call the LLM with the structured output schema
+        result = await generate_structured_content(
+            prompt=prompt,
+            schema=models.GoodServiceLikelihoodOutput,
+            temperature=DEFAULT_TEMPERATURE,
+            top_p=DEFAULT_TOP_P,
+            top_k=DEFAULT_TOP_K,
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS
+        )
+        
+        # Validate the result
+        validated_assessment = models.GoodServiceLikelihoodOutput.model_validate(result.model_dump())
+        logger.info(f"Successfully generated G/S likelihood assessment with confusion: {validated_assessment.likelihood_of_confusion}")
+        
+        return validated_assessment
+        
+    except GoogleAPIError as e:
+        logger.error(f"Google API error during G/S likelihood assessment: {str(e)}")
+        raise
+    except ValidationError as e:
+        logger.error(f"Validation failed for LLM GoodServiceLikelihoodOutput: {e}")
+        raise ValueError(f"LLM output failed validation: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error in G/S likelihood assessment: {str(e)}")
+        raise
+
 # --- Conceptual similarity function ---
 async def _get_conceptual_similarity_score_from_llm(mark1: str, mark2: str) -> float:
     """Calculate conceptual similarity score between two wordmarks using Gemini with structured output."""
@@ -63,7 +193,7 @@ async def _get_conceptual_similarity_score_from_llm(mark1: str, mark2: str) -> f
             temperature=0.1,
             top_p=0.95,
             top_k=40,
-            max_output_tokens=1000
+            max_output_tokens=4000
         )
 
         # Extract and return the score directly
@@ -138,97 +268,4 @@ async def generate_structured_content(
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise
-
-# --- Refactored main prediction function ---
-async def generate_full_prediction(
-    request: models.PredictionRequest,
-    visual_score: float,
-    aural_score: float,
-    conceptual_score: float
-) -> models.CasePrediction:
-    """
-    Generate a complete trademark opposition prediction using the Gemini LLM.
-    
-    This function takes pre-calculated similarity scores and generates the full prediction
-    including mark comparison, G&S comparisons, likelihood, and outcome via a single LLM call.
-
-    Args:
-        request: The prediction request containing applicant and opponent details.
-        visual_score: Pre-calculated visual similarity score (0.0-1.0).
-        aural_score: Pre-calculated aural similarity score (0.0-1.0).
-        conceptual_score: Pre-calculated conceptual similarity score (0.0-1.0).
-
-    Returns:
-        CasePrediction: Complete prediction object parsed by Pydantic.
-
-    Raises:
-        GoogleAPIError: If there's an issue with the Gemini API.
-        ValueError: If the LLM returns empty or invalid parsed data.
-    """
-    # Convert conceptual score to EnumStr category
-    if conceptual_score >= 0.9:
-        conceptual_category = "identical"
-    elif conceptual_score >= 0.7:
-        conceptual_category = "high"
-    elif conceptual_score >= 0.4:
-        conceptual_category = "moderate"
-    elif conceptual_score >= 0.1:
-        conceptual_category = "low"
-    else:
-        conceptual_category = "dissimilar"
-
-    # Serialize goods/services input as JSON
-    applicant_goods_list = [gs.model_dump() for gs in request.applicant_goods]
-    opponent_goods_list = [gs.model_dump() for gs in request.opponent_goods]
-    goods_services_input_json = json.dumps({
-        "applicant_goods": applicant_goods_list,
-        "opponent_goods": opponent_goods_list
-    }, indent=2)
-
-    # Build the unified prompt using the template
-    # Prepare dynamic parts for the prompt template
-    applicant_status = 'Registered' if request.applicant.is_registered else 'Application only'
-    applicant_reg_num_line = f'*   Registration Number: `{request.applicant.registration_number}`' if request.applicant.registration_number else ''
-    opponent_status = 'Registered' if request.opponent.is_registered else 'Application only'
-    opponent_reg_num_line = f'*   Registration Number: `{request.opponent.registration_number}`' if request.opponent.registration_number else ''
-
-    prompt = prompts.FULL_PREDICTION_PROMPT_TEMPLATE.format(
-        applicant_wordmark=request.applicant.wordmark,
-        applicant_status=applicant_status,
-        applicant_reg_num_line=applicant_reg_num_line,
-        opponent_wordmark=request.opponent.wordmark,
-        opponent_status=opponent_status,
-        opponent_reg_num_line=opponent_reg_num_line,
-        visual_score=visual_score,
-        aural_score=aural_score,
-        conceptual_score=conceptual_score,
-        conceptual_category=conceptual_category,
-        goods_services_input_json=goods_services_input_json
-    )
-
-    try:
-        # Call the LLM with the full schema using our helper function
-        result = await generate_structured_content(
-            prompt=prompt,
-            schema=models.CasePrediction,
-            temperature=DEFAULT_TEMPERATURE,
-            top_p=DEFAULT_TOP_P,
-            top_k=DEFAULT_TOP_K,
-            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS
-        )
-
-        # Validate the result
-        validated_prediction = models.CasePrediction.model_validate(result.model_dump())
-        logger.info("Successfully validated CasePrediction from LLM response.")
-        return validated_prediction
-
-    except GoogleAPIError as e:
-        logger.error(f"Google API error during full prediction: {str(e)}")
-        raise
-    except ValidationError as e:
-        logger.error(f"Validation failed for LLM CasePrediction output: {e}")
-        raise ValueError(f"LLM output failed validation: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error in full prediction: {str(e)}")
         raise

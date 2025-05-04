@@ -24,32 +24,38 @@ class Mark(BaseModel):
 
 
 class GoodService(BaseModel):
-    """A single goods/services entry with Nice classification."""
-    term: str = Field(..., description="The goods/services description")
-    nice_class: Annotated[int, Field(ge=1, le=45)] = Field(..., description="Nice classification (1-45)")
+    """A single good or service term in a Nice class."""
+    term: str = Field(..., description="The good or service term")
+    nice_class: int = Field(..., ge=1, le=45, description="The Nice Classification class number (1-45)")
 
 
-class MarkComparison(BaseModel):
-    """Comparison results between two trademarks across multiple dimensions."""
-    visual: EnumStr = Field(..., description="Visual similarity assessed by LLM")
-    aural: EnumStr = Field(..., description="Aural similarity assessed by LLM")
-    conceptual: EnumStr = Field(..., description="Conceptual similarity assessed by LLM")
-    overall: EnumStr = Field(..., description="Overall mark similarity assessed by LLM")
+# Model for conceptual similarity score calculation input/output
+class ConceptualSimilarityScore(BaseModel):
+    """Numeric score for conceptual similarity (0.0-1.0)."""
+    score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Conceptual similarity score")
 
 
-# New model for Goods/Services Comparison output
-class GoodServiceComparison(BaseModel):
-    """Detailed comparison between one applicant good/service and one opponent good/service."""
-    applicant_good: GoodService = Field(..., description="The applicant's good/service being compared")
-    opponent_good: GoodService = Field(..., description="The opponent's good/service being compared")
-    overall_similarity: EnumStr = Field(..., description="Overall similarity assessed by LLM (dissimilar, low, moderate, high, identical)")
-    are_competitive: bool = Field(..., description="Whether the goods/services are directly competitive")
-    are_complementary: bool = Field(..., description="Whether the goods/services are complementary")
-    # Add a field for reasoning specific to this pair? Optional for now.
-    # reasoning: Optional[str] = Field(None, description="Explanation for this specific G&S comparison")
+# Model for mark similarity assessment - used by /mark_similarity endpoint
+class MarkSimilarityOutput(BaseModel):
+    """Detailed assessment of mark similarity across multiple dimensions."""
+    visual: EnumStr = Field(..., description="Visual similarity category")
+    aural: EnumStr = Field(..., description="Aural similarity category")  
+    conceptual: EnumStr = Field(..., description="Conceptual similarity category")
+    overall: EnumStr = Field(..., description="Overall similarity category considering all dimensions")
+    reasoning: str | None = Field(None, description="Optional reasoning for the overall assessment")
 
 
-# New model for the structured opposition outcome
+# Model for goods service likelihood assessment - used by /gs_similarity endpoint
+class GoodServiceLikelihoodOutput(BaseModel):
+    """Detailed assessment of goods/service similarity and likelihood of confusion."""
+    are_competitive: bool = Field(..., description="Whether the goods/services compete in the marketplace")
+    are_complementary: bool = Field(..., description="Whether the goods/services are complementary or used together")
+    similarity_score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Similarity score between the goods/services")
+    likelihood_of_confusion: bool = Field(..., description="Whether there is a likelihood of confusion for this G/S pair considering mark similarity")
+    confusion_type: Literal["direct", "indirect"] | None = Field(None, description="Type of confusion (null if no likelihood)")
+
+
+# Model for the structured opposition outcome - keeping the existing one
 class OppositionOutcome(BaseModel):
     """Structured prediction of the opposition outcome."""
     result: OppositionResultEnum = Field(..., description="The predicted outcome category")
@@ -57,41 +63,31 @@ class OppositionOutcome(BaseModel):
     reasoning: str = Field(..., description="Detailed reasoning supporting the predicted outcome and confidence")
 
 
-# New model for the LLM-only output of a G&S comparison (no input goods)
-class GoodServiceComparisonOutput(BaseModel):
-    """Schema for LLM output of a goods/services comparison."""
-    overall_similarity: EnumStr = Field(..., description="Overall similarity assessed by LLM (dissimilar, low, moderate, high, identical)")
-    are_competitive: bool = Field(..., description="Whether the goods/services are directly competitive")
-    are_complementary: bool = Field(..., description="Whether the goods/services are complementary")
-
-
-# New model for the LLM-only output of the final case prediction (excluding G&S full data)
-class CasePredictionOutput(BaseModel):
-    """Schema for LLM output of the final case prediction."""
-    mark_comparison: MarkComparison = Field(..., description="Detailed mark similarity breakdown generated by LLM (visual, aural, conceptual, overall)")
-    likelihood_of_confusion: bool = Field(..., description="Overall likelihood assessment by LLM, considering both marks and G&S")
+# New model for the full case prediction result
+class CasePredictionResult(BaseModel):
+    """Complete trademark opposition case prediction including mark similarity and goods/services likelihoods."""
+    mark_comparison: MarkSimilarityOutput = Field(..., description="Detailed mark similarity assessment")
+    goods_services_likelihoods: list[GoodServiceLikelihoodOutput] = Field(..., description="List of detailed likelihood assessments for each applicant vs. opponent good/service pair")
     opposition_outcome: OppositionOutcome = Field(..., description="Structured prediction of the opposition outcome including reasoning")
 
 
-# Full prediction including G&S comparisons
-class CasePrediction(BaseModel):
-    """Complete trademark opposition case prediction including all comparisons."""
-    mark_comparison: MarkComparison = Field(..., description="Detailed mark similarity breakdown generated by LLM")
-    goods_services_comparisons: list[GoodServiceComparison] = Field(..., description="List of detailed comparisons for each applicant vs. opponent good/service pair")
-    likelihood_of_confusion: bool = Field(..., description="Overall likelihood assessment by LLM, considering both marks and G&S")
-    opposition_outcome: OppositionOutcome = Field(..., description="Structured prediction of the opposition outcome including reasoning")
-
-
-# Input structure for the API endpoint
-class PredictionRequest(BaseModel):
-    """Input model for trademark opposition prediction."""
+# Model for comparison of two wordmarks
+class MarkSimilarityRequest(BaseModel):
+    """Input for mark similarity assessment."""
     applicant: Mark = Field(..., description="The applicant's mark details")
     opponent: Mark = Field(..., description="The opponent's mark details")
-    applicant_goods: list[GoodService] = Field(..., max_length=3, description="The applicant's goods/services (max 3 items)")
-    opponent_goods: list[GoodService] = Field(..., max_length=3, description="The opponent's goods/services (max 3 items)")
 
 
-# New model for conceptual similarity score
-class ConceptualSimilarityScore(BaseModel):
-    """Schema for LLM output of conceptual similarity score."""
-    score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Conceptual similarity score (0.0 to 1.0)")
+# Model for goods/services similarity and likelihood of confusion
+class GsSimilarityRequest(BaseModel):
+    """Input for goods/services similarity and likelihood assessment."""
+    applicant_good: GoodService = Field(..., description="The applicant's good/service")
+    opponent_good: GoodService = Field(..., description="The opponent's good/service")
+    mark_similarity: MarkSimilarityOutput = Field(..., description="Mark similarity assessment from /mark_similarity endpoint")
+
+
+# Model for the case prediction based on previous assessments
+class CasePredictionRequest(BaseModel):
+    """Input for final case prediction."""
+    mark_similarity: MarkSimilarityOutput = Field(..., description="The mark similarity assessment from /mark_similarity endpoint")
+    goods_services_likelihoods: list[GoodServiceLikelihoodOutput] = Field(..., min_length=1, description="The G/S likelihood assessments from /gs_similarity endpoint")

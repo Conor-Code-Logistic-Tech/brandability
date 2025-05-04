@@ -5,17 +5,115 @@ This module stores formatted string constants for prompts sent to the Gemini LLM
 ensuring consistency and easy modification.
 """
 
+MARK_SIMILARITY_PROMPT_TEMPLATE = """
+You are a trademark law expert specializing in UK/EU trademark opposition proceedings.
+
+**Input Data:**
+*   **Applicant Mark:** `{applicant_wordmark}`
+*   **Opponent Mark:** `{opponent_wordmark}`
+*   **Pre-calculated Similarity Scores (0.0-1.0):**
+    *   Visual (Levenshtein): {visual_score:.2f}
+    *   Aural (Metaphone): {aural_score:.2f}
+
+**Your Task:**
+
+Perform a global assessment of mark similarity following UK/EU trademark law principles, resulting in a structured JSON response. Assess each dimension (visual, aural, conceptual, overall) using ONLY one of these categories: "dissimilar", "low", "moderate", "high", or "identical".
+
+**Specific Instructions:**
+
+1.  **Visual Similarity:**
+    *   Use the provided Levenshtein score as guidance, not a deterministic rule.
+    *   Consider length, structure, and distinctive/dominant elements.
+    *   Assess as per UK/EU case law standards.
+
+2.  **Aural Similarity:**
+    *   Use the provided Metaphone score as guidance, not a deterministic rule.
+    *   Consider pronunciation, syllable count, stress patterns, and phonetic elements.
+    *   Assess as per UK/EU case law standards.
+
+3.  **Conceptual Similarity:**
+    *   Analyze any semantic meanings, translations, or conceptual associations.
+    *   Consider whether the marks evoke similar or different concepts.
+    *   If either mark is a made-up word without clear meaning, they are conceptually dissimilar.
+    *   Assess as per UK/EU case law standards.
+
+4.  **Overall Similarity:**
+    *   Perform a global assessment considering all dimensions.
+    *   Use the interdependence principle: a higher similarity in one aspect may compensate for less similarity in another.
+    *   Consider the distinctive and dominant elements of each mark.
+    *   Provide a brief reasoning for your overall assessment.
+
+Generate a JSON object conforming exactly to the `MarkSimilarityOutput` schema.
+
+**Output ONLY the valid JSON object, with no other text before or after it.**
+"""
+"""
+Purpose: Global assessment of mark similarity across multiple dimensions based on UK/EU standards.
+Input Args: applicant_wordmark (str), opponent_wordmark (str), visual_score (float), aural_score (float)
+Expected Output Schema: models.MarkSimilarityOutput
+"""
+
+GS_LIKELIHOOD_PROMPT_TEMPLATE = """
+You are a trademark law expert specializing in goods/services comparisons and likelihood of confusion assessments for UK/EU trademark opposition proceedings.
+
+**Input Data:**
+*   **Applicant Good/Service:** `{applicant_term}` (Class {applicant_nice_class})
+*   **Opponent Good/Service:** `{opponent_term}` (Class {opponent_nice_class})
+*   **Mark Similarity Context:**
+    *   Visual: "{mark_visual}"
+    *   Aural: "{mark_aural}"
+    *   Conceptual: "{mark_conceptual}" 
+    *   Overall: "{mark_overall}"
+
+**Your Task:**
+
+Assess the relationship between the specific goods/services and determine the likelihood of confusion considering the interdependence with the mark similarity context. Generate a structured JSON response.
+
+**Specific Instructions:**
+
+1.  **Goods/Services Relationship:**
+    *   Assess if the goods/services are **competitive** (true/false): Could they directly compete in the marketplace?
+    *   Assess if the goods/services are **complementary** (true/false): Are they used together or in conjunction?
+    *   Assign a **similarity score** (0.0-1.0) based on:
+        *   Nature and purpose of the goods/services
+        *   Distribution channels and points of sale
+        *   Relevant consumers and end users
+        *   Whether they are in the same or different Nice classes
+
+2.  **Likelihood of Confusion Assessment:**
+    *   Consider the **interdependence principle**: A higher degree of similarity between marks can offset a lower degree of similarity between goods/services, and vice versa.
+    *   Taking into account the provided mark similarity context, determine if there is a **likelihood of confusion** (true/false) for this specific G/S pair.
+    *   If likelihood is true, determine the **type of confusion** ("direct" or "indirect"):
+        *   Direct: Consumer might confuse one mark for the other
+        *   Indirect: Consumer might believe there is an economic connection between marks (e.g., licensing, same corporate group)
+    *   If no likelihood, set confusion_type to null.
+
+3.  **UK/EU Consumer Perspective:**
+    *   Make your assessment from the perspective of the average consumer in the UK/EU.
+    *   Consider the level of attention the average consumer would pay to these goods/services.
+
+Generate a JSON object conforming exactly to the `GoodServiceLikelihoodOutput` schema.
+
+**Output ONLY the valid JSON object, with no other text before or after it.**
+"""
+"""
+Purpose: Assessment of goods/services relationship and likelihood of confusion with mark similarity context.
+Input Args: applicant_term (str), applicant_nice_class (int), opponent_term (str), opponent_nice_class (int),
+            mark_visual (EnumStr), mark_aural (EnumStr), mark_conceptual (EnumStr), mark_overall (EnumStr)
+Expected Output Schema: models.GoodServiceLikelihoodOutput
+"""
+
 CONCEPTUAL_SIMILARITY_PROMPT_TEMPLATE = """
 Analyze the conceptual similarity between Mark 1: '{mark1}' and Mark 2: '{mark2}'.
 Consider meaning, shared concepts, and overall commercial impression.
-Provide a single decimal score between 0.0 (dissimilar) and 1.0 (identical).
+Provide a single decimal score between 0.0 (dissimilar) and 1.0 (identical). If either mark is devoid of clear meaning and concept, i.e. is a made-up word, return a score of 0.0.
 
 Return a score where:
-- 0.0 means completely different concepts with no relation
+- 0.0 means completely different concepts with no relation, or one or both marks are devoid of clear meaning and concept, i.e. are made-up words
 - 0.1-0.3 means low conceptual similarity (distant relation)
 - 0.4-0.6 means moderate conceptual similarity (some overlapping concepts)
 - 0.7-0.8 means high conceptual similarity (strongly related concepts)
-- 0.9-1.0 means identical or nearly identical concepts
+- 0.9-1.0 means identical or nearly identical concepts, even if the marks are textually different. For example, "AQUA" vs "WATER" would be visually dissimilar but conceptually identical.
 
 Generate a JSON object containing only the 'score' field, conforming to the ConceptualSimilarityScore schema.
 """
@@ -23,81 +121,4 @@ Generate a JSON object containing only the 'score' field, conforming to the Conc
 Purpose: Generate a numerical score for conceptual similarity between two wordmarks.
 Input Args: mark1 (str), mark2 (str)
 Expected Output Schema: models.ConceptualSimilarityScore
-"""
-
-
-GOODS_SERVICES_COMPARISON_PROMPT_TEMPLATE = """
-You are a trademark law expert specializing in goods and services comparisons.
-Analyze the relationship between the following two items:
-
-Applicant Good/Service: {applicant_term} (Class {applicant_nice_class})
-Opponent Good/Service: {opponent_term} (Class {opponent_nice_class})
-
-Your task is to determine:
-1.  **Overall Similarity:** Assess the similarity based on nature, purpose, use, trade channels, and consumers. Use ONLY one category: "dissimilar", "low", "moderate", "high", or "identical".
-2.  **Competitiveness:** Are these goods/services directly competitive in the marketplace? (true/false)
-3.  **Complementarity:** Are these goods/services complementary (used together or related in consumption)? (true/false)
-
-Consider the Nice class, but focus primarily on the commercial reality and potential for consumer confusion between the terms themselves.
-
-Generate a JSON object conforming to the provided schema, containing 'overall_similarity', 'are_competitive', and 'are_complementary'.
-The JSON response should ONLY contain these three fields, correctly populated based on your analysis. Do NOT include the input applicant_good or opponent_good fields in the response JSON.
-"""
-"""
-Purpose: Compare a single pair of applicant and opponent goods/services.
-Input Args: applicant_term (str), applicant_nice_class (int), opponent_term (str), opponent_nice_class (int)
-Expected Output Schema: models.GoodServiceComparisonOutput
-"""
-
-
-FULL_PREDICTION_PROMPT_TEMPLATE = """
-You are TrademarkGPT, a specialized legal AI assistant for trademark lawyers.
-
-**Input Data:**
-
-*   **Applicant Mark:**
-    *   Wordmark: `{applicant_wordmark}`
-    *   Registration Status: {applicant_status}
-    {applicant_reg_num_line}
-*   **Opponent Mark:**
-    *   Wordmark: `{opponent_wordmark}`
-    *   Registration Status: {opponent_status}
-    {opponent_reg_num_line}
-*   **Pre-calculated Mark Similarity Scores (0.0-1.0):**
-    *   Visual: {visual_score:.2f}
-    *   Aural: {aural_score:.2f}
-    *   Conceptual: {conceptual_score:.2f} (translates to '{conceptual_category}' category)
-*   **Goods/Services Input:**
-    ```json
-    {goods_services_input_json}
-    ```
-
-**Your Task:**
-
-Generate a complete JSON object conforming exactly to the `CasePrediction` schema. Use the input data above to populate the fields.
-
-**Specific Instructions:**
-
-1.  **`mark_comparison`:**
-    *   Assess `visual`, `aural`, and `overall` similarity categories ('dissimilar', 'low', 'moderate', 'high', 'identical') based *primarily* on the provided scores, but use legal judgment for the overall assessment.
-    *   Use the pre-calculated conceptual score to determine the `conceptual` category: '{conceptual_category}'.
-2.  **`goods_services_comparisons`:**
-    *   Create an array of comparison objects. Generate one object for each potential pairing between an applicant good/service and an opponent good/service from the input JSON.
-    *   For **each** object in the array:
-        *   **Critically, populate `applicant_good` and `opponent_good` by copying the corresponding `term` and `nice_class` directly from the input JSON.**
-        *   Assess `overall_similarity` ('dissimilar', 'low', 'moderate', 'high', 'identical').
-        *   Determine `are_competitive` (true/false).
-        *   Determine `are_complementary` (true/false).
-3.  **`likelihood_of_confusion`:** Assess the overall likelihood (true/false) considering both marks and the goods/services comparisons.
-4.  **`opposition_outcome`:** Provide a structured outcome (`result`, `confidence` 0.0-1.0, detailed `reasoning`).
-
-**Output ONLY the valid JSON object conforming to the `CasePrediction` schema, with no other text before or after it.**
-"""
-"""
-Purpose: Generate a full trademark opposition case prediction based on input marks, goods/services, and pre-calculated similarity scores.
-Input Args: applicant_wordmark, applicant_status, applicant_reg_num_line,
-            opponent_wordmark, opponent_status, opponent_reg_num_line,
-            visual_score, aural_score, conceptual_score, conceptual_category,
-            goods_services_input_json
-Expected Output Schema: models.CasePrediction
 """

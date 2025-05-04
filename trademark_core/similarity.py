@@ -102,19 +102,7 @@ async def calculate_conceptual_similarity(mark1: str, mark2: str) -> float:
     # Call the LLM function directly
     return await _get_conceptual_similarity_score_from_llm(mark1, mark2)
 
-# Remove the G&S similarity function as it's handled within generate_full_prediction
-# async def calculate_goods_services_similarity(applicant_gs: list[models.GoodService],
-#                                      opponent_gs: list[models.GoodService]) -> float:
-#     """
-#     Calculate similarity between two lists of goods/services using LLM analysis.
-#     ...
-#     """
-#     if not applicant_gs or not opponent_gs:
-#         return 0.0
-#
-#     return await calculate_goods_services_similarity_llm(applicant_gs, opponent_gs)
-
-async def calculate_overall_similarity(mark1: models.Mark, mark2: models.Mark) -> models.MarkComparison:
+async def calculate_overall_similarity(mark1: models.Mark, mark2: models.Mark) -> models.MarkSimilarityOutput:
     """
     Calculate overall similarity between two trademarks across all dimensions.
     
@@ -123,7 +111,7 @@ async def calculate_overall_similarity(mark1: models.Mark, mark2: models.Mark) -
         mark2: Second trademark
         
     Returns:
-        MarkComparison: Comparison results for all dimensions
+        MarkSimilarityOutput: Comparison results for all dimensions
     """
     # Calculate individual similarities
     visual_sim = calculate_visual_similarity(mark1.wordmark, mark2.wordmark)
@@ -164,9 +152,10 @@ async def calculate_overall_similarity(mark1: models.Mark, mark2: models.Mark) -
 
     overall = score_to_enum(overall_score)
 
-    return models.MarkComparison(
+    return models.MarkSimilarityOutput(
         visual=visual,
         aural=aural,
         conceptual=conceptual,
-        overall=overall
+        overall=overall,
+        reasoning=f"Calculated from visual ({visual_sim:.2f}), aural ({aural_sim:.2f}), and conceptual ({conceptual_sim:.2f}) similarities"
     )
