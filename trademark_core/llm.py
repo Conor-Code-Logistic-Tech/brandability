@@ -8,6 +8,7 @@ for generating detailed legal reasoning based on trademark similarity analyses.
 import json
 import logging
 import os
+import uuid
 from typing import Any
 
 from google import genai
@@ -22,11 +23,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Default model configuration
-DEFAULT_MODEL = "gemini-2.5-pro-preview-03-25"
+DEFAULT_MODEL = "gemini-2.5-flash-preview-04-17"
 DEFAULT_TEMPERATURE = 0.2
+DEFAULT_TEMPERATURE_INCREMENT = 0.1
 DEFAULT_TOP_P = 0.95
 DEFAULT_TOP_K = 40
-DEFAULT_MAX_OUTPUT_TOKENS = 2048
+DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
 # Initialize Generative AI client with Vertex AI
 try:
@@ -76,8 +78,12 @@ async def generate_mark_similarity_assessment(
         GoogleAPIError: If there's an issue with the Gemini API
         ValueError: If the LLM returns empty or invalid parsed data
     """
+    # Generate a unique ID for this request to track it through logs
+    request_id = str(uuid.uuid4())[:8]
+    log_prefix = f"[Mark Similarity {request_id}]"
+    
     try:
-        logger.info(f"Generating mark similarity assessment: '{applicant_mark.wordmark}' vs '{opponent_mark.wordmark}'")
+        logger.info(f"{log_prefix} Starting mark similarity assessment: '{applicant_mark.wordmark}' vs '{opponent_mark.wordmark}'")
         
         # Build the prompt using the template
         prompt = prompts.MARK_SIMILARITY_PROMPT_TEMPLATE.format(
@@ -94,23 +100,24 @@ async def generate_mark_similarity_assessment(
             temperature=DEFAULT_TEMPERATURE,
             top_p=DEFAULT_TOP_P,
             top_k=DEFAULT_TOP_K,
-            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            request_context=log_prefix
         )
         
         # Validate the result
         validated_assessment = models.MarkSimilarityOutput.model_validate(result.model_dump())
-        logger.info(f"Successfully generated mark similarity assessment with overall similarity: {validated_assessment.overall}")
+        logger.info(f"{log_prefix} Successfully generated with overall similarity: {validated_assessment.overall}")
         
         return validated_assessment
         
     except GoogleAPIError as e:
-        logger.error(f"Google API error during mark similarity assessment: {str(e)}")
+        logger.error(f"{log_prefix} Google API error: {str(e)}")
         raise
     except ValidationError as e:
-        logger.error(f"Validation failed for LLM MarkSimilarityOutput: {e}")
+        logger.error(f"{log_prefix} Validation failed: {e}")
         raise ValueError(f"LLM output failed validation: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error in mark similarity assessment: {str(e)}")
+        logger.error(f"{log_prefix} Unexpected error: {str(e)}")
         raise
 
 # --- Goods/Services Likelihood Assessment Function ---
@@ -138,8 +145,12 @@ async def generate_gs_likelihood_assessment(
         GoogleAPIError: If there's an issue with the Gemini API
         ValueError: If the LLM returns empty or invalid parsed data
     """
+    # Generate a unique ID for this request to track it through logs
+    request_id = str(uuid.uuid4())[:8]
+    log_prefix = f"[G/S Assessment {request_id}]"
+    
     try:
-        logger.info(f"Generating G/S likelihood assessment: '{applicant_good.term}' vs '{opponent_good.term}'")
+        logger.info(f"{log_prefix} Starting G/S likelihood assessment: '{applicant_good.term}' vs '{opponent_good.term}'")
         
         # Build the prompt using the template
         prompt = prompts.GS_LIKELIHOOD_PROMPT_TEMPLATE.format(
@@ -160,23 +171,24 @@ async def generate_gs_likelihood_assessment(
             temperature=DEFAULT_TEMPERATURE,
             top_p=DEFAULT_TOP_P,
             top_k=DEFAULT_TOP_K,
-            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            request_context=log_prefix
         )
         
         # Validate the result
         validated_assessment = models.GoodServiceLikelihoodOutput.model_validate(result.model_dump())
-        logger.info(f"Successfully generated G/S likelihood assessment with confusion: {validated_assessment.likelihood_of_confusion}")
+        logger.info(f"{log_prefix} Successfully generated with confusion: {validated_assessment.likelihood_of_confusion}")
         
         return validated_assessment
         
     except GoogleAPIError as e:
-        logger.error(f"Google API error during G/S likelihood assessment: {str(e)}")
+        logger.error(f"{log_prefix} Google API error: {str(e)}")
         raise
     except ValidationError as e:
-        logger.error(f"Validation failed for LLM GoodServiceLikelihoodOutput: {e}")
+        logger.error(f"{log_prefix} Validation failed: {e}")
         raise ValueError(f"LLM output failed validation: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error in G/S likelihood assessment: {str(e)}")
+        logger.error(f"{log_prefix} Unexpected error: {str(e)}")
         raise
 
 # --- Conceptual similarity function ---
@@ -221,7 +233,8 @@ async def generate_structured_content(
     temperature: float = DEFAULT_TEMPERATURE,
     top_p: float = DEFAULT_TOP_P,
     top_k: int = DEFAULT_TOP_K,
-    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    request_context: str = ""
 ) -> Any:
     """
     Make a standardized LLM call with structured output.
@@ -233,6 +246,7 @@ async def generate_structured_content(
         top_p: Nucleus sampling parameter
         top_k: Top-k sampling parameter
         max_output_tokens: Maximum number of tokens to generate
+        request_context: Optional context identifier for logging
         
     Returns:
         The parsed response object
@@ -241,31 +255,197 @@ async def generate_structured_content(
         GoogleAPIError: If there's an API issue
         ValueError: If response parsing fails
     """
+    # If no request context provided, generate a unique ID
+    if not request_context:
+        request_context = f"[LLM Request {str(uuid.uuid4())[:8]}]"
+    
     try:
+        # For Pydantic models, directly use the class instead of converting to schema dictionary
+        # The Gemini Python SDK will properly translate Pydantic models to the appropriate schema
         config = types.GenerateContentConfig(
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
-            response_schema=schema
+            response_schema=schema  # Pass the Pydantic class directly as recommended in the docs
         )
 
-        response = await client.aio.models.generate_content(
-            model=DEFAULT_MODEL,
-            contents=prompt,
-            config=config
+        # Create a new client instance every time to avoid event loop issues
+        local_client = genai.Client(
+            vertexai=True,
+            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+            http_options=types.HttpOptions(api_version='v1')
         )
 
-        if not response.parsed:
-            logger.error("LLM returned empty parsed data")
-            raise ValueError("LLM returned empty parsed data")
+        # Log the schema being used for debugging
+        schema_name = schema.__name__ if hasattr(schema, '__name__') else str(schema)
+        logger.info(f"{request_context} REQUEST: Using schema: {schema_name} (temp={temperature}, top_p={top_p}, top_k={top_k})")
+        
+        # Log prompt (truncated if too long)
+        prompt_excerpt = prompt[:500] + "..." if len(prompt) > 500 else prompt
+        logger.info(f"{request_context} PROMPT: {prompt_excerpt}")
 
-        return response.parsed
+        # Make up to 3 attempts to get a valid response
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await local_client.aio.models.generate_content(
+                    model=DEFAULT_MODEL,
+                    contents=prompt,
+                    config=config
+                )
+                
+                # Log the raw response for debugging - use INFO level to ensure it appears in logs
+                if hasattr(response, "text"):
+                    raw_response = response.text
+                    # Truncate very long responses in logs
+                    log_response = raw_response[:5000] + "..." if len(raw_response) > 5000 else raw_response
+                    logger.info(f"{request_context} RAW RESPONSE (attempt {attempt}): {log_response}")
+                else:
+                    logger.info(f"{request_context} RAW RESPONSE (attempt {attempt}) - No text attribute: {response}")
+                
+                # Check if we have a valid response
+                if response.parsed:
+                    parsed_str = json.dumps(response.parsed.model_dump() if hasattr(response.parsed, 'model_dump') else response.parsed, indent=2)
+                    # Truncate very long responses in logs
+                    parsed_log = parsed_str[:5000] + "..." if len(parsed_str) > 5000 else parsed_str
+                    logger.info(f"{request_context} PARSED RESPONSE: {parsed_log}")
+                    return response.parsed
+                
+                # If we reach here, no valid data was returned
+                logger.warning(f"{request_context} Empty parsed data (attempt {attempt}/{max_attempts})")
+                
+                # For subsequent attempts, increase temperature slightly to encourage variation
+                if attempt < max_attempts:
+                    # Increase temperature by 0.1 for each retry (up to a max of 0.6)
+                    config.temperature = min(0.6, temperature + (DEFAULT_TEMPERATURE_INCREMENT * attempt))
+                    logger.info(f"{request_context} Retrying with temperature={config.temperature}")
+                else:
+                    # Last attempt failed, raise error
+                    logger.error(f"{request_context} All attempts failed")
+                    raise ValueError("LLM returned empty parsed data after multiple attempts")
+                    
+            except GoogleAPIError as api_error:
+                error_str = str(api_error)
+                logger.error(f"{request_context} API ERROR (attempt {attempt}): {error_str}")
+                # Only retry on specific types of API errors that might be transient
+                if "rate limit" in error_str.lower() or "timeout" in error_str.lower():
+                    if attempt < max_attempts:
+                        logger.warning(f"{request_context} Transient API error, will retry")
+                        continue
+                # For other API errors or last attempt, re-raise
+                raise
+
+        # If we exit the loop without returning or raising, raise a value error
+        raise ValueError("LLM returned empty parsed data")
 
     except GoogleAPIError as e:
-        logger.error(f"Google API error: {str(e)}")
+        logger.error(f"{request_context} Google API error: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        logger.error(f"{request_context} Unexpected error: {str(e)}", exc_info=True)
         raise
+
+# New function for batch processing goods/services
+async def batch_process_goods_services(
+    applicant_goods: list[models.GoodService],
+    opponent_goods: list[models.GoodService],
+    mark_similarity: models.MarkSimilarityOutput
+) -> list[models.GoodServiceLikelihoodOutput]:
+    """
+    Process multiple goods/services comparisons with rate limiting.
+    
+    This function processes combinations of goods/services in smaller batches
+    to avoid overwhelming the LLM API with too many concurrent requests.
+    
+    Args:
+        applicant_goods: List of applicant's goods/services
+        opponent_goods: List of opponent's goods/services
+        mark_similarity: Mark similarity assessment to use for all comparisons
+        
+    Returns:
+        List of GoodServiceLikelihoodOutput objects for each pair
+    """
+    import asyncio
+    
+    # Generate a unique batch ID for this entire batch process
+    batch_id = str(uuid.uuid4())[:8]
+    log_prefix = f"[Batch Process {batch_id}]"
+    
+    # Log the start of batch processing with details
+    logger.info(f"{log_prefix} Starting batch processing: {len(applicant_goods)} applicant goods × {len(opponent_goods)} opponent goods = {len(applicant_goods) * len(opponent_goods)} total combinations")
+    
+    # Create a list of all combinations to process
+    combinations = []
+    for applicant_good in applicant_goods:
+        for opponent_good in opponent_goods:
+            combinations.append((applicant_good, opponent_good))
+    
+    # Process batches of combinations with rate limiting
+    batch_size = 3  # Process only a small number of combinations at once
+    delay_seconds = 1  # Add delay between batches
+    
+    processed_results = []
+    successful_count = 0
+    error_count = 0
+    
+    for i in range(0, len(combinations), batch_size):
+        batch = combinations[i:i+batch_size]
+        current_batch_num = i//batch_size + 1
+        total_batches = (len(combinations)+batch_size-1)//batch_size
+        batch_log_prefix = f"{log_prefix} Batch {current_batch_num}/{total_batches}"
+        
+        # Log batch start with combination details
+        logger.info(f"{batch_log_prefix} Processing combinations:")
+        for idx, (app_good, opp_good) in enumerate(batch):
+            logger.info(f"{batch_log_prefix} Item {idx+1}: '{app_good.term}' vs '{opp_good.term}'")
+        
+        # Create tasks for this batch
+        tasks = []
+        for applicant_good, opponent_good in batch:
+            task = generate_gs_likelihood_assessment(
+                applicant_good=applicant_good,
+                opponent_good=opponent_good,
+                mark_similarity=mark_similarity
+            )
+            tasks.append(task)
+        
+        # Process this batch
+        logger.info(f"{batch_log_prefix} Starting processing")
+        start_time = asyncio.get_event_loop().time()
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        end_time = asyncio.get_event_loop().time()
+        batch_duration = end_time - start_time
+        
+        # Handle any exceptions
+        batch_success = 0
+        batch_errors = 0
+        for j, result in enumerate(batch_results):
+            if isinstance(result, Exception):
+                # Log the error but continue with other results
+                error_count += 1
+                batch_errors += 1
+                error_type = type(result).__name__
+                error_msg = str(result)
+                logger.error(f"{batch_log_prefix} Item {j+1} ERROR ({error_type}): {error_msg}")
+            else:
+                successful_count += 1
+                batch_success += 1
+                processed_results.append(result)
+        
+        # Log batch completion stats
+        logger.info(f"{batch_log_prefix} Completed in {batch_duration:.2f}s: {batch_success} successful, {batch_errors} failed")
+        
+        # Add delay between batches to avoid rate limits
+        if i + batch_size < len(combinations):
+            logger.info(f"{batch_log_prefix} Waiting {delay_seconds}s before next batch")
+            await asyncio.sleep(delay_seconds)
+    
+    # Log overall batch processing stats
+    total_processed = successful_count + error_count
+    success_rate = (successful_count / total_processed * 100) if total_processed > 0 else 0
+    logger.info(f"{log_prefix} Batch processing complete: {successful_count}/{total_processed} successful ({success_rate:.1f}%)")
+    
+    return processed_results

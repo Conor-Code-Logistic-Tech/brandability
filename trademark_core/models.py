@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 EnumStr = Literal["dissimilar", "low", "moderate", "high", "identical"]
 # Define OppositionOutcome result literals
 OppositionResultEnum = Literal["Opposition likely to succeed", "Opposition may partially succeed", "Opposition likely to fail"]
+# Define ConfusionType literals
+ConfusionTypeEnum = Literal["direct", "indirect"]
 
 
 class Mark(BaseModel):
@@ -52,7 +54,7 @@ class GoodServiceLikelihoodOutput(BaseModel):
     are_complementary: bool = Field(..., description="Whether the goods/services are complementary or used together")
     similarity_score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Similarity score between the goods/services")
     likelihood_of_confusion: bool = Field(..., description="Whether there is a likelihood of confusion for this G/S pair considering mark similarity")
-    confusion_type: Literal["direct", "indirect"] | None = Field(None, description="Type of confusion (null if no likelihood)")
+    confusion_type: ConfusionTypeEnum | None = Field(None, description="Type of confusion (null if no likelihood)")
 
 
 # Model for the structured opposition outcome - keeping the existing one
@@ -83,6 +85,14 @@ class GsSimilarityRequest(BaseModel):
     """Input for goods/services similarity and likelihood assessment."""
     applicant_good: GoodService = Field(..., description="The applicant's good/service")
     opponent_good: GoodService = Field(..., description="The opponent's good/service")
+    mark_similarity: MarkSimilarityOutput = Field(..., description="Mark similarity assessment from /mark_similarity endpoint")
+
+
+# Model for batch goods/services similarity processing
+class BatchGsSimilarityRequest(BaseModel):
+    """Input for batch processing of multiple goods/services similarity assessments."""
+    applicant_goods: list[GoodService] = Field(..., min_length=1, description="List of the applicant's goods/services")
+    opponent_goods: list[GoodService] = Field(..., min_length=1, description="List of the opponent's goods/services")
     mark_similarity: MarkSimilarityOutput = Field(..., description="Mark similarity assessment from /mark_similarity endpoint")
 
 

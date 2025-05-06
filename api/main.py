@@ -14,6 +14,7 @@ from trademark_core import models
 from trademark_core.llm import (
     generate_gs_likelihood_assessment,
     generate_mark_similarity_assessment,
+    batch_process_goods_services,
 )
 
 # Import similarity calculation functions
@@ -31,11 +32,7 @@ app = FastAPI(
 )
 
 # --- CORS Configuration ---
-origins = [
-    "localhost",
-    "https://trademark-prediction-system.web.app",
-    "https://europe-west2-trademark-prediction-system.cloudfunctions.net/trademark-api"
-]
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -139,6 +136,53 @@ async def gs_similarity(
         raise HTTPException(
             status_code=500,
             detail=f"Error generating goods/services assessment: {str(e)}"
+        )
+
+@app.post("/batch_gs_similarity", response_model=list[models.GoodServiceLikelihoodOutput])
+async def batch_gs_similarity(
+    request: models.BatchGsSimilarityRequest,
+    user: firebase_admin.auth.UserRecord = Depends(get_current_user)
+) -> list[models.GoodServiceLikelihoodOutput]:
+    """
+    Process multiple goods/services comparisons concurrently.
+    
+    This endpoint takes lists of applicant and opponent goods/services along with
+    the mark similarity context, and returns a list of likelihood assessments for
+    all combinations. All comparisons are processed concurrently using proper async
+    event loop handling.
+    
+    Requires Firebase Authentication.
+    
+    Args:
+        request: The batch G/S request containing lists of goods/services and mark similarity
+        user: The authenticated Firebase user (injected by dependency)
+        
+    Returns:
+        List of GoodServiceLikelihoodOutput objects for all G/S combinations
+    """
+    try:
+        # Limit the number of items to process to avoid timeouts
+        max_items_per_list = 5
+        if len(request.applicant_goods) > max_items_per_list or len(request.opponent_goods) > max_items_per_list:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Too many items to process. Please limit to {max_items_per_list} items per list."
+            )
+        
+        # Process all goods/services combinations concurrently
+        results = await batch_process_goods_services(
+            applicant_goods=request.applicant_goods,
+            opponent_goods=request.opponent_goods,
+            mark_similarity=request.mark_similarity
+        )
+        
+        return results
+    
+    except Exception as e:
+        # Handle any errors from the batch processing
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing batch goods/services assessment: {str(e)}"
         )
 
 @app.post("/case_prediction", response_model=models.CasePredictionResult)

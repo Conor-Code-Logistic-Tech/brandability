@@ -160,4 +160,67 @@ def test_full_workflow_dissimilar_marks_dissimilar_goods(test_client):
     case_prediction = case_response.json()
     
     # With dissimilar marks and goods, opposition should fail
-    assert case_prediction["opposition_outcome"]["result"] == "Opposition likely to fail" 
+    assert case_prediction["opposition_outcome"]["result"] == "Opposition likely to fail"
+
+
+def test_full_workflow_with_batch_processing(test_client):
+    """Test the complete workflow using batch processing for goods/services comparisons."""
+    # Step 1: Make a mark similarity request
+    mark_similarity_payload = models.MarkSimilarityRequest(
+        applicant=models.Mark(wordmark="EXAMPLIA", is_registered=True),
+        opponent=models.Mark(wordmark="EXEMPLAR", is_registered=True)
+    ).model_dump()
+    
+    # Call the mark similarity endpoint
+    mark_response = test_client.post("/mark_similarity", json=mark_similarity_payload)
+    assert mark_response.status_code == 200
+    mark_similarity = mark_response.json()
+    
+    # Step 2: Use batch processing for goods/services comparisons
+    applicant_goods = [
+        models.GoodService(term="Software for legal research", nice_class=42),
+        models.GoodService(term="Printed publications", nice_class=16)
+    ]
+    
+    opponent_goods = [
+        models.GoodService(term="Computer software for legal case management", nice_class=42),
+        models.GoodService(term="Electronic books", nice_class=9)
+    ]
+    
+    batch_gs_payload = models.BatchGsSimilarityRequest(
+        applicant_goods=applicant_goods,
+        opponent_goods=opponent_goods,
+        mark_similarity=mark_similarity
+    ).model_dump()
+    
+    # Call the batch goods/services endpoint
+    batch_gs_response = test_client.post("/batch_gs_similarity", json=batch_gs_payload)
+    assert batch_gs_response.status_code == 200
+    gs_likelihoods = batch_gs_response.json()
+    
+    # Verify we got the expected number of results (2×2 combinations)
+    assert len(gs_likelihoods) == 4
+    
+    # Step 3: Make the case prediction request with the results from steps 1 and 2
+    case_prediction_payload = {
+        "mark_similarity": mark_similarity,
+        "goods_services_likelihoods": gs_likelihoods
+    }
+    
+    # Call the case prediction endpoint
+    case_response = test_client.post("/case_prediction", json=case_prediction_payload)
+    assert case_response.status_code == 200
+    
+    # Verify the case prediction result structure
+    case_prediction = case_response.json()
+    assert "opposition_outcome" in case_prediction
+    assert "result" in case_prediction["opposition_outcome"]
+    assert "confidence" in case_prediction["opposition_outcome"]
+    assert "reasoning" in case_prediction["opposition_outcome"]
+    
+    # The result should be one of the valid outcome categories
+    assert case_prediction["opposition_outcome"]["result"] in [
+        "Opposition likely to succeed", 
+        "Opposition may partially succeed", 
+        "Opposition likely to fail"
+    ] 
