@@ -14,19 +14,24 @@ import asyncio # Added for potential async validation later if needed
 EnumStr = Literal["dissimilar", "low", "moderate", "high", "identical"]
 # Define OppositionOutcome result literals
 OppositionResultEnum = Literal["Opposition likely to succeed", "Opposition may partially succeed", "Opposition likely to fail"]
+# Define ConfusionType literals
+ConfusionTypeEnum = Literal["direct", "indirect"]
+
+# Define list of supported LLM models
+SupportedModels = Literal["gemini-2.5-pro-preview-03-25", "gemini-2.5-flash-preview-04-17"]
 
 
 class Mark(BaseModel):
     """A trademark mark, consisting of text and registration details."""
     wordmark: str = Field(..., description="Literal mark text, case-sensitive")
     is_registered: bool = False
-    registration_number: Optional[str] = None
+    registration_number: str | None = None
 
 
 class GoodService(BaseModel):
-    """A single goods/services entry with Nice classification."""
-    term: str = Field(..., description="The goods/services description")
-    nice_class: Annotated[int, Field(ge=1, le=45)] = Field(..., description="Nice classification (1-45)")
+    """A single good or service term in a Nice class."""
+    term: str = Field(..., description="The good or service term")
+    nice_class: int = Field(..., ge=1, le=45, description="The Nice Classification class number (1-45)")
 
 
 class MarkComparison(BaseModel):
@@ -94,4 +99,66 @@ class PredictionRequest(BaseModel):
 # New model for conceptual similarity score
 class ConceptualSimilarityScore(BaseModel):
     """Schema for LLM output of conceptual similarity score."""
-    score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Conceptual similarity score (0.0 to 1.0)") 
+    score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Conceptual similarity score (0.0 to 1.0)")
+
+
+# Model for mark similarity assessment - used by /mark_similarity endpoint
+class MarkSimilarityOutput(BaseModel):
+    """Detailed assessment of mark similarity across multiple dimensions."""
+    visual: EnumStr = Field(..., description="Visual similarity category")
+    aural: EnumStr = Field(..., description="Aural similarity category")  
+    conceptual: EnumStr = Field(..., description="Conceptual similarity category")
+    overall: EnumStr = Field(..., description="Overall similarity category considering all dimensions")
+    reasoning: str | None = Field(None, description="Optional reasoning for the overall assessment")
+
+
+# Model for goods service likelihood assessment - used by /gs_similarity endpoint
+class GoodServiceLikelihoodOutput(BaseModel):
+    """Detailed assessment of goods/service similarity and likelihood of confusion."""
+    are_competitive: bool = Field(..., description="Whether the goods/services compete in the marketplace")
+    are_complementary: bool = Field(..., description="Whether the goods/services are complementary or used together")
+    similarity_score: Annotated[float, Field(ge=0.0, le=1.0)] = Field(..., description="Similarity score between the goods/services")
+    likelihood_of_confusion: bool = Field(..., description="Whether there is a likelihood of confusion for this G/S pair considering mark similarity")
+    confusion_type: ConfusionTypeEnum | None = Field(None, description="Type of confusion (null if no likelihood)")
+
+
+# Model for the full case prediction result
+class CasePredictionResult(BaseModel):
+    """Complete trademark opposition case prediction including mark similarity and goods/services likelihoods."""
+    mark_comparison: MarkSimilarityOutput = Field(..., description="Detailed mark similarity assessment")
+    goods_services_likelihoods: list[GoodServiceLikelihoodOutput] = Field(..., description="List of detailed likelihood assessments for each applicant vs. opponent good/service pair")
+    opposition_outcome: OppositionOutcome = Field(..., description="Structured prediction of the opposition outcome including reasoning")
+
+
+# Model for comparison of two wordmarks
+class MarkSimilarityRequest(BaseModel):
+    """Input for mark similarity assessment."""
+    applicant: Mark = Field(..., description="The applicant's mark details")
+    opponent: Mark = Field(..., description="The opponent's mark details")
+    model: SupportedModels | None = Field(None, description="Optional LLM model to use for similarity assessment. If not provided, DEFAULT_MODEL is used.")
+
+
+# Model for goods/services similarity and likelihood of confusion
+class GsSimilarityRequest(BaseModel):
+    """Input for goods/services similarity and likelihood assessment."""
+    applicant_good: GoodService = Field(..., description="The applicant's good/service")
+    opponent_good: GoodService = Field(..., description="The opponent's good/service")
+    mark_similarity: MarkSimilarityOutput = Field(..., description="Mark similarity assessment from /mark_similarity endpoint")
+    model: SupportedModels | None = Field(None, description="Optional LLM model to use for similarity assessment. If not provided, DEFAULT_MODEL is used.")
+
+
+# Model for batch goods/services similarity processing
+class BatchGsSimilarityRequest(BaseModel):
+    """Input for batch processing of multiple goods/services similarity assessments."""
+    applicant_goods: list[GoodService] = Field(..., min_length=1, description="List of the applicant's goods/services")
+    opponent_goods: list[GoodService] = Field(..., min_length=1, description="List of the opponent's goods/services")
+    mark_similarity: MarkSimilarityOutput = Field(..., description="Mark similarity assessment from /mark_similarity endpoint")
+    model: SupportedModels | None = Field(None, description="Optional LLM model to use for similarity assessment. If not provided, DEFAULT_MODEL is used.")
+
+
+# Model for the case prediction based on previous assessments
+class CasePredictionRequest(BaseModel):
+    """Input for final case prediction."""
+    mark_similarity: MarkSimilarityOutput = Field(..., description="The mark similarity assessment from /mark_similarity endpoint")
+    goods_services_likelihoods: list[GoodServiceLikelihoodOutput] = Field(..., min_length=1, description="The G/S likelihood assessments from /gs_similarity endpoint")
+    model: SupportedModels | None = Field(None, description="Optional LLM model to use for similarity assessment. If not provided, DEFAULT_MODEL is used.") 
