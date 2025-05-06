@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Use HTTPBearer security scheme for extracting the token
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
 @lru_cache
 def initialize_firebase_admin():
     """
@@ -49,27 +50,31 @@ def initialize_firebase_admin():
         # For a critical API, you might want the app to fail startup.
         raise RuntimeError("Could not initialize Firebase Admin SDK.") from e
 
+
 def is_test_mode() -> bool:
     """Return True if TEST_MODE environment variable is set to a truthy value."""
     value = os.environ.get("TEST_MODE", "").lower()
     return value in ("1", "true", "yes")
 
+
 def get_current_user(token: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
     """
     Dependency to get the current Firebase user.
     Returns a dummy user if TEST_MODE is set (for tests/dev), otherwise enforces Firebase authentication.
-    
+
     Args:
         token: The HTTP Bearer token extracted from the Authorization header
-        
+
     Returns:
         The Firebase UserRecord for the authenticated user
     """
     if is_test_mode():
+
         class DummyUser:
             uid = "test-user"
             email = "test@example.com"
             display_name = "Test User"
+
         return DummyUser()
 
     if not token:
@@ -93,25 +98,25 @@ def get_current_user(token: HTTPAuthorizationCredentials | None = Depends(bearer
         # Let's return the UID for now as a simpler example.
         # To get UserRecord, uncomment the get_user line above and below.
         # uid = decoded_token.get("uid")
-        user = auth.get_user(decoded_token['uid'])
+        user = auth.get_user(decoded_token["uid"])
         if not user:
-             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-        return user # Or return decoded_token if you only need claims
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return user  # Or return decoded_token if you only need claims
 
     except auth.InvalidIdTokenError as e:
         logger.warning(f"Invalid ID token: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid or expired token: {e}",
-            headers={"WWW-Authenticate": "Bearer error=\"invalid_token\""},
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
     except auth.UserNotFoundError:
-         logger.warning("User not found for token.")
-         raise HTTPException(
+        logger.warning("User not found for token.")
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User associated with token not found.",
             headers={"WWW-Authenticate": "Bearer"},
-         )
+        )
     except Exception as e:
         # Catch other potential errors during verification or Firebase init issues
         logger.error(f"Error verifying token: {e}", exc_info=True)

@@ -16,9 +16,9 @@ def make_valid_case_prediction_request() -> dict:
         aural="moderate",
         conceptual="low",
         overall="moderate",
-        reasoning="The marks share some visual and aural elements but have different meanings."
+        reasoning="The marks share some visual and aural elements but have different meanings.",
     )
-    
+
     # Create some G/S likelihood outputs
     gs_likelihoods = [
         models.GoodServiceLikelihoodOutput(
@@ -26,20 +26,19 @@ def make_valid_case_prediction_request() -> dict:
             are_complementary=False,
             similarity_score=0.85,
             likelihood_of_confusion=True,
-            confusion_type="direct"
+            confusion_type="direct",
         ),
         models.GoodServiceLikelihoodOutput(
             are_competitive=False,
             are_complementary=True,
             similarity_score=0.4,
             likelihood_of_confusion=False,
-            confusion_type=None
-        )
+            confusion_type=None,
+        ),
     ]
-    
+
     return models.CasePredictionRequest(
-        mark_similarity=mark_similarity,
-        goods_services_likelihoods=gs_likelihoods
+        mark_similarity=mark_similarity, goods_services_likelihoods=gs_likelihoods
     ).model_dump()
 
 
@@ -49,18 +48,22 @@ def test_case_prediction_success(test_client):
     response = test_client.post("/case_prediction", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     # Check that response matches CasePredictionResult structure
     expected_keys = {"mark_comparison", "goods_services_likelihoods", "opposition_outcome"}
     assert set(data.keys()) == expected_keys
-    
+
     # Check opposition_outcome structure
     outcome = data["opposition_outcome"]
     assert set(outcome.keys()) == {"result", "confidence", "reasoning"}
-    assert outcome["result"] in ["Opposition likely to succeed", "Opposition may partially succeed", "Opposition likely to fail"]
+    assert outcome["result"] in [
+        "Opposition likely to succeed",
+        "Opposition may partially succeed",
+        "Opposition likely to fail",
+    ]
     assert 0.0 <= outcome["confidence"] <= 1.0
     assert outcome["reasoning"]  # Not empty
-    
+
     # Verify input data is preserved in the response
     assert data["mark_comparison"] == payload["mark_similarity"]
     assert len(data["goods_services_likelihoods"]) == len(payload["goods_services_likelihoods"])
@@ -71,7 +74,7 @@ def test_case_prediction_all_confusion(test_client):
     mark_similarity = models.MarkSimilarityOutput(
         visual="high", aural="high", conceptual="high", overall="high"
     )
-    
+
     # All G/S pairs with likelihood of confusion
     gs_likelihoods = [
         models.GoodServiceLikelihoodOutput(
@@ -79,26 +82,25 @@ def test_case_prediction_all_confusion(test_client):
             are_complementary=False,
             similarity_score=0.9,
             likelihood_of_confusion=True,
-            confusion_type="direct"
+            confusion_type="direct",
         ),
         models.GoodServiceLikelihoodOutput(
             are_competitive=True,
             are_complementary=False,
             similarity_score=0.8,
             likelihood_of_confusion=True,
-            confusion_type="direct"
-        )
+            confusion_type="direct",
+        ),
     ]
-    
+
     payload = models.CasePredictionRequest(
-        mark_similarity=mark_similarity,
-        goods_services_likelihoods=gs_likelihoods
+        mark_similarity=mark_similarity, goods_services_likelihoods=gs_likelihoods
     ).model_dump()
-    
+
     response = test_client.post("/case_prediction", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     # All confusion should result in "likely to succeed"
     assert data["opposition_outcome"]["result"] == "Opposition likely to succeed"
     assert data["opposition_outcome"]["confidence"] >= 0.8
@@ -109,7 +111,7 @@ def test_case_prediction_no_confusion(test_client):
     mark_similarity = models.MarkSimilarityOutput(
         visual="low", aural="low", conceptual="low", overall="low"
     )
-    
+
     # No G/S pairs with likelihood of confusion
     gs_likelihoods = [
         models.GoodServiceLikelihoodOutput(
@@ -117,26 +119,25 @@ def test_case_prediction_no_confusion(test_client):
             are_complementary=False,
             similarity_score=0.2,
             likelihood_of_confusion=False,
-            confusion_type=None
+            confusion_type=None,
         ),
         models.GoodServiceLikelihoodOutput(
             are_competitive=False,
             are_complementary=False,
             similarity_score=0.1,
             likelihood_of_confusion=False,
-            confusion_type=None
-        )
+            confusion_type=None,
+        ),
     ]
-    
+
     payload = models.CasePredictionRequest(
-        mark_similarity=mark_similarity,
-        goods_services_likelihoods=gs_likelihoods
+        mark_similarity=mark_similarity, goods_services_likelihoods=gs_likelihoods
     ).model_dump()
-    
+
     response = test_client.post("/case_prediction", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     # No confusion should result in "likely to fail"
     assert data["opposition_outcome"]["result"] == "Opposition likely to fail"
     assert data["opposition_outcome"]["confidence"] >= 0.8
@@ -147,7 +148,7 @@ def test_case_prediction_partial_confusion(test_client):
     mark_similarity = models.MarkSimilarityOutput(
         visual="moderate", aural="moderate", conceptual="moderate", overall="moderate"
     )
-    
+
     # Mixed G/S confusion
     gs_likelihoods = [
         models.GoodServiceLikelihoodOutput(
@@ -155,26 +156,25 @@ def test_case_prediction_partial_confusion(test_client):
             are_complementary=False,
             similarity_score=0.75,
             likelihood_of_confusion=True,
-            confusion_type="direct"
+            confusion_type="direct",
         ),
         models.GoodServiceLikelihoodOutput(
             are_competitive=False,
             are_complementary=False,
             similarity_score=0.3,
             likelihood_of_confusion=False,
-            confusion_type=None
-        )
+            confusion_type=None,
+        ),
     ]
-    
+
     payload = models.CasePredictionRequest(
-        mark_similarity=mark_similarity,
-        goods_services_likelihoods=gs_likelihoods
+        mark_similarity=mark_similarity, goods_services_likelihoods=gs_likelihoods
     ).model_dump()
-    
+
     response = test_client.post("/case_prediction", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     # Partial confusion should result in "may partially succeed"
     assert data["opposition_outcome"]["result"] == "Opposition may partially succeed"
 
@@ -185,4 +185,4 @@ def test_case_prediction_invalid_input(test_client):
     payload = make_valid_case_prediction_request()
     del payload["mark_similarity"]
     response = test_client.post("/case_prediction", json=payload)
-    assert response.status_code == 422 
+    assert response.status_code == 422

@@ -436,3 +436,78 @@ This application is designed for deployment to Google Cloud Functions (or potent
 
 Refer to Google Cloud Functions documentation for detailed deployment steps.
 
+## Development and Testing
+
+### Setup
+
+1. Clone this repository
+2. Create a virtual environment: `python -m venv venv`
+3. Activate the virtual environment:
+   - Windows: `venv\Scripts\activate`
+   - Unix/MacOS: `source venv/bin/activate`
+4. Install dependencies: `pip install -r requirements.txt`
+5. Copy `.env.example` to `.env` and set appropriate values
+
+### Running Tests
+
+The project includes a comprehensive test suite. Tests can be run in two modes:
+
+#### With Mocks (Default)
+
+For quick development feedback, tests use mocks by default instead of making real LLM API calls:
+
+```bash
+# Run all tests with mocks
+pytest
+
+# Run specific tests
+pytest tests/test_batch_gs_processing.py
+
+# Run with coverage information
+pytest --cov=trademark_core --cov=api 
+```
+
+#### With Real LLM Calls
+
+Following the testing strategy, the project supports tests with real LLM calls to Vertex AI for higher fidelity validation:
+
+```bash
+# First, ensure you have the necessary environment variables set:
+# - GOOGLE_CLOUD_PROJECT
+# - GOOGLE_CLOUD_LOCATION (default: us-central1)
+# - GOOGLE_APPLICATION_CREDENTIALS (path to service account JSON)
+
+# Run all real LLM tests
+python tests/run_real_llm_tests.py
+
+# Run specific test file with real LLM calls
+python tests/run_real_llm_tests.py tests/test_real_llm_integration.py
+
+# Run all tests with real LLM calls (may be slow)
+python tests/run_real_llm_tests.py tests/
+```
+
+Or you can set the environment variable manually:
+
+```bash
+# Disable mocks and run tests directly
+USE_LLM_MOCKS=0 pytest tests/test_real_llm_integration.py
+
+# With additional options
+USE_LLM_MOCKS=0 pytest -v tests/test_real_llm_integration.py::test_real_mark_similarity_identical
+```
+
+> **Note**: Running tests with real LLM calls requires valid Vertex AI credentials and will consume API quota. Tests may also run slower due to network latency and rate limiting.
+
+### Model Parameter Testing
+
+Tests for the model parameter functionality are available, allowing you to verify that different models can be specified:
+
+```bash
+# Run model parameter tests with mocks
+pytest tests/test_model_parameter.py
+
+# Run model parameter tests with real LLM calls
+python tests/run_real_llm_tests.py tests/test_model_parameter.py
+```
+
