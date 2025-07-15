@@ -37,10 +37,36 @@ def initialize_firebase_admin():
             logger.info("Firebase Admin SDK already initialized.")
             return firebase_admin.get_app()
 
+        # Get the project ID from environment variable
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "trademark-prediction-system")
+        
+        # Debug: Log all relevant environment variables
+        logger.info(f"Raw GOOGLE_CLOUD_PROJECT: '{project_id}'")
+        logger.info(f"GOOGLE_CLOUD_LOCATION: '{os.environ.get('GOOGLE_CLOUD_LOCATION', 'not set')}'")
+        logger.info(f"GOOGLE_GENAI_USE_VERTEXAI: '{os.environ.get('GOOGLE_GENAI_USE_VERTEXAI', 'not set')}'")
+        logger.info(f"TEST_MODE: '{os.environ.get('TEST_MODE', 'not set')}'")
+        
+        # Ensure project ID is clean (no extra environment variables)
+        project_id = project_id.strip()
+        
+        # Additional check for any unexpected characters or concatenation
+        if ' ' in project_id or '\n' in project_id or '\t' in project_id:
+            logger.error(f"Project ID contains whitespace or special characters: '{project_id}'")
+            # Clean the project ID by taking only the first part before any space
+            project_id = project_id.split()[0]
+            logger.info(f"Cleaned project ID: '{project_id}'")
+        
+        logger.info(f"Initializing Firebase Admin SDK with project ID: '{project_id}'")
+
         # Attempt initialization using Application Default Credentials (ADC)
         # This is the standard way in Cloud Functions/Run environments
         cred = credentials.ApplicationDefault()
-        firebase_admin.initialize_app(cred)
+        
+        # Initialize with explicit project ID to avoid any concatenation issues
+        firebase_admin.initialize_app(cred, {
+            'projectId': project_id
+        })
+        
         logger.info("Firebase Admin SDK initialized successfully using ADC.")
         return firebase_admin.get_app()
 
@@ -104,10 +130,17 @@ def get_current_user(token: HTTPAuthorizationCredentials | None = Depends(bearer
         return user  # Or return decoded_token if you only need claims
 
     except auth.InvalidIdTokenError as e:
-        logger.warning(f"Invalid ID token: {e}")
+        error_msg = str(e)
+        logger.warning(f"Invalid ID token: {error_msg}")
+        
+        # Check if this is specifically an audience claim issue
+        if "aud" in error_msg:
+            logger.error(f"Firebase audience claim mismatch detected: {error_msg}")
+            logger.error("This suggests a Firebase project configuration issue.")
+        
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {e}",
+            detail=f"Invalid or expired token: {error_msg}",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
     except auth.UserNotFoundError:
