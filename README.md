@@ -444,6 +444,7 @@ This application is designed for deployment to Google Cloud Functions (or potent
 -   Ensure `requirements.txt` is up-to-date.
 -   Use the `gcloud functions deploy` command, specifying the entry point (`app` from `main.py`), runtime, region, and necessary environment variables (can be set via `.env.yaml` or command-line flags).
 -   Configure appropriate IAM permissions for the function's service account to access Vertex AI.
+- (optionally) change the config settings `gcloud functions deploy trademark-api --region=europe-west2 --runtime=python311 --trigger-http --entry-point=app --env-vars-file=.env.yaml --source=.`
 
 Refer to Google Cloud Functions documentation for detailed deployment steps.
 
