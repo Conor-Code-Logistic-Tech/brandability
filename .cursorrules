@@ -1,18 +1,18 @@
 # .cursorrules — AI-first, human-friendly configuration for Cursor AI
-# Project: Trademark-AI (backend-only FastAPI service, Firebase-on-GCP stack)
+# Project: Brandability - Decision Intelligence for Trademark Lawyers
 
 rules:
   # ────────────────────────────────────────────────────────────────
   - id: ai-and-human-readable
     description: >
       Optimise **all** code, comments, docs, commit messages for *both*
-      LLMs and humans:
+      AI Agents and humans:
         • Descriptive identifiers; no abbreviations unless industry-standard.
         • Start every docstring / markdown section with a one-sentence summary,
           then detail.
         • Stable heading hierarchy (#, ##, ###) so LLMs can build TOCs.
         • Prefer clear, linear logic over clever tricks.
-        • Docstrings: PEP 257 w/ *Args*, *Returns*, *Raises*.
+        • Docstrings
         • Always provide type hints.
     enforcementLevel: high
 
@@ -36,46 +36,31 @@ rules:
     enforcementLevel: high
 
   # ────────────────────────────────────────────────────────────────
-  - id: backend-only-no-auth
-    description: >
-      Remember: this repository is **backend API only**.
-        • No front-end assets, no Firebase Hosting.
-        • MVP is stateless HTTP; *no authentication* required.
-        • Do not introduce UI code or auth middleware unless explicitly asked.
-    enforcementLevel: high
-
-  # ────────────────────────────────────────────────────────────────
   - id: tech-stack
     description: >
-      Respect the stack declared in the Blueprint:
-        • FastAPI + Uvicorn
-        • Firebase
-        • Vertex AI
+      Respect the stack declared and never fix package versions always use the latest:
+        - **Framework**: React 19 with TypeScript
+        - **Build Tool**: Vitest
+        - **Styling**: Tailwind CSS
+        - **UI Components**: shadcn/ui
+        - **State Management**: TanStack Query
+        - **Authentication**: Firebase Auth SDK
+        - **Testing**: Vitest + React Testing Library
       New deps must be lightweight, maintained, and justified in a bullet list.
-    enforcementLevel: medium
-
-  # ────────────────────────────────────────────────────────────────
-  - id: code-style
-    description: >
-      Follow PEP 8 + Ruff defaults; import groups:
-        1. Standard library
-        2. Third-party
-        3. Local
-      Leave one blank line between groups.
-    enforcementLevel: high
+    enforcementLevel: critical
 
   # ────────────────────────────────────────────────────────────────
   - id: maintainability
     description: >
-      Keep modules small, functions focused, avoid duplication.
-      Remove dead code.  Complexity low so LLMs can parse whole modules.
+      Keep files small, flows focused, avoid duplication.
+      Remove dead code.
     enforcementLevel: high
 
   # ────────────────────────────────────────────────────────────────
   - id: test-driven-development
     description: >
       Where practical, add/adjust tests before or with code changes.
-      All tests (`pytest`) must pass before PRs merge.
+      All npm tests must pass before PRs merge.
     enforcementLevel: medium
 
   # ────────────────────────────────────────────────────────────────
@@ -96,14 +81,201 @@ rules:
   - id: cursor-agent-environment
     description: >
       As Cursor AI you may:
-        • run shell commands (e.g. `pytest`, `ruff`)
-        • read / modify any repo file except any .env files
+        • run shell commands (e.g. `npm run test`, `npm run lint -- --fix`, `firebase deploy ...` etc.)
+        • read / modify any repo file.
         • search the web for factual data
       Log commands you execute and why, so others can reproduce.
     enforcementLevel: high
 
+## 🎯 Core Principles
+
+You are an expert AI assistant working on Brandability AI - a trademark opposition prediction platform. Follow these principles:
+
+1. **DRY (Do not Repeat Yourself)**: Never duplicate code. Extract common patterns into reusable functions/components
+2. **TDD (Test-Driven Development)**: Write tests first, then implementation. Aim for 80%+ coverage
+3. **Minimalist Code**: Write concise, readable code. Prefer clarity over cleverness
+4. **UK/EU Legal Compliance**: All trademark analysis must follow UK/EU legal principles
+
+## 🔧 Technical Stack & Conventions
+
+### Command Line Interface
+- **PowerShell is the default CLI in Cursor**
+- All terminal commands must use PowerShell syntax
+- Use PowerShell cmdlets: `New-Item`, `Set-Location`, `Get-ChildItem`, etc.
+- For cross-platform compatibility, prefer PowerShell Core commands
+- Example: Use `New-Item -ItemType Directory -Path "folder" -Force` not `mkdir -p folder`
+
+### Frontend (React/TypeScript)
+- React 19 with TypeScript strict mode
+- Vite for build tooling  
+- TanStack Query for server state
+- shadcn/ui components only
+- Tailwind CSS for styling - no inline styles
+
+### Code Style
+```typescript
+// ✅ Good: Clear, typed, single responsibility
+export const calculateVisualSimilarity = async (
+  mark1: Mark,
+  mark2: Mark
+): Promise<SimilarityScore> => {
+  const distance = await levenshteinDistance(mark1.name, mark2.name);
+  return normalizeSimilarityScore(distance);
+};
+
+// ❌ Bad: Unclear, untyped, multiple responsibilities  
+export const calc = (m1: any, m2: any) => {
+  // complex logic mixing multiple concerns
+};
+```
+
+### Testing Requirements
+- Jest + React Testing Library for frontend
+- Firebase emulators for integration tests
+- Test file naming: `*.test.ts` or `*.spec.ts`
+- Minimum coverage: 80% for business logic, 60% for UI
+
+## 🚀 Development Workflow
+
+### When Creating Features
+1. Review existing code patterns first
+2. Write tests before implementation
+3. Use existing UI components from shadcn/ui
+4. Follow established Firebase patterns
+5. Add proper TypeScript types
+
+### When Fixing Bugs
+1. Reproduce the issue with a failing test
+2. Fix the implementation
+3. Verify all tests pass
+4. Check for similar issues elsewhere
+
+### Error Handling
+```typescript
+// Always use structured error handling
+try {
+  const result = await riskyOperation();
+  return { success: true, data: result };
+} catch (error) {
+  console.error('Operation failed:', error);
+  return { 
+    success: false, 
+    error: error instanceof Error ? error.message : 'Unknown error' 
+  };
+}
+```
+
+## 🎨 UI/UX Guidelines
+
+- Mobile-first responsive design
+- Accessibility: WCAG 2.1 AA compliance
+- Loading states for all async operations
+- Error boundaries for graceful failures
+- Consistent spacing using Tailwind classes
+
+## 🔄 Context Window Reset Protocol
+
+When the user types **RESET**:
+
+### 1. Stop Current Work
+```
+🛑 CONTEXT RESET INITIATED
+
+Current work summary:
+- [List what was being worked on]
+- [Current file/feature context]
+- [Any pending tasks]
+```
+
+### 2. Prepare Handover
+Create a handover summary with:
+- Work completed so far
+- Current state of the codebase
+- Any issues encountered
+- Next logical steps
+
+### 3. Update Context Window Optimisation Files
+**CRITICAL**: Update these files to optimise the next conversation context window:
+
+#### Update `.cursorrules`:
+- Modify the "Current Indexing Focus" section to reflect active work areas
+- Update priority files based on next tasks
+- Ensure PowerShell syntax rules are maintained
+
+#### Update `.cursorindexingignore`:
+- Add completed/stable directories to ignore list
+- Remove directories that need active work
+- Keep test/coverage outputs ignored
+- Optimise for minimal context usage
+
+### 4. Update Project Documentation
+**REQUIRED**: Update these project files with current progress:
+
+#### Update `docs/roadmap.md`:
+- Mark completed items with checkmarks
+- Update current sprint status
+- Note any timeline adjustments
+
+#### Update `docs/Projects/*.md` files:
+- Update task statuses (Not Started → In Progress → Completed)
+- Add completion timestamps
+- Log important decisions or changes
+- Note any blockers or issues
+
+### 5. Provide Task Chain
+Return exactly 3 tasks for the next agent:
+```
+📋 HANDOVER TASKS FOR NEXT AGENT:
+
+1. [Specific, actionable task related to current work]
+2. [Follow-up task that builds on #1]  
+3. [Testing or documentation task to complete the feature]
+```
+
+## MCP, TOOLS, CONTEXT, IDE CONFIGURATION
+
+<mcp_tool_configuration>
+  **FIREBASE MCP INTEGRATION (Project IDs for MCP tools)**:
+  - Project ID: brandability-ai
+  
+  **GITHUB MCP INTEGRATION**
+  - **Primary Monorepo**: Current working repository
+  - **CI/CD Focus**: `.github/workflows/` directory
+  - Access patterns: Focus on deployment and infrastructure automation
+</mcp_tool_configuration>
+
+## 🧠 AI Behavior Rules
+
+### DO:
+- Be terse and direct in responses
+- Provide actual code, not high-level descriptions
+- Anticipate needs based on context
+- Use existing patterns from the codebase
+- Cite specific files when referencing code
+- Use PowerShell syntax for all CLI commands
+
+### DON'T:
+- Create unnecessary files (especially docs/README)
+- Repeat code unnecessarily
+- Give moral lectures or unnecessary warnings
+- Use deprecated APIs or patterns
+- Create JavaScript files (TypeScript only)
+- Use bash/zsh syntax in terminal commands
+
+## 🔍 Current Indexing Focus
+
+<!-- This section is dynamically updated during RESET -->
+### Active Work Areas:
+
+
+### Priority Files:
+
+
+### Ignore Patterns:
+
+---
+
+Remember: When in doubt, check existing patterns in the codebase. The codebase is the source of truth. 
+
 indexing:
   # Offer Cursor extra context by default
-  - "api/**/*.py"
-  - "trademark_core/**/*.py"
-  - "tests/**/*.py"

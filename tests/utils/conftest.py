@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
-from tests.mocks import apply_llm_mocks
+from mocks import apply_llm_mocks
 
 # Check if we should apply mocks or use real LLM services
 USE_MOCKS = os.environ.get("USE_LLM_MOCKS", "1") == "1"

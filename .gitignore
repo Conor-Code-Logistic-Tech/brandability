@@ -29,6 +29,7 @@ venv/
 ENV/
 .env.local
 .env.yaml
+tests/test-data/
 
 # IDE
 .idea/

@@ -352,16 +352,26 @@ trademark_prod/
 │       └── case_prediction.py  # /case_prediction endpoint
 ├── trademark_core/
 │   ├── __init__.py
-│   ├── llm.py              # Gemini LLM interaction logic, structured output generation
+│   ├── llm.py              # LLM integration with Vertex AI Gemini
 │   ├── models.py           # Pydantic models (SSoT for API schemas & internal data)
-│   ├── prompts.py          # Central store for LLM prompt templates
-│   └── similarity.py       # Visual, Aural similarity calculation logic
+│   └── similarity.py       # Visual and aural similarity calculations
 ├── tests/                  # Automated tests
 │   ├── __init__.py
 │   └── # ... test files ...
 ├── main.py                 # Cloud Functions entry point (imports app from api.main)
 ├── pyproject.toml          # Project metadata & dependencies (Poetry or similar)
 ├── requirements.txt        # Project dependencies (pip format)
+├── data/
+│   ├── prompts/            # Markdown files with prompt templates
+│   │   ├── mark_similarity_prompt.md
+│   │   ├── gs_likelihood_prompt.md
+│   │   ├── conceptual_similarity_prompt.md
+│   │   └── case_prediction_prompt.md
+│   └── examples/           # Few-shot examples for each prompt
+│       ├── mark_similarity_examples.md
+│       ├── gs_likelihood_examples.md
+│       ├── conceptual_similarity_examples.md
+│       └── case_prediction_examples.md
 └── README.md               # This file
 ```
 
@@ -374,8 +384,9 @@ trademark_prod/
 *   **`api/auth.py`**: Handles Firebase ID token verification logic for securing endpoints.
 *   **`trademark_core/models.py`**: **Single Source of Truth (SSoT)** for all data structures using Pydantic. Defines the exact request and response schemas for all API endpoints.
 *   **`trademark_core/similarity.py`**: Contains functions to calculate visual and aural similarity scores.
-*   **`trademark_core/llm.py`**: Manages interaction with the Google Vertex AI Gemini model. Uses prompts from `prompts.py`, sends requests, parses structured JSON responses, and handles LLM API errors. Contains modular LLM generation functions for mark similarity and goods/services assessments.
-*   **`trademark_core/prompts.py`**: Stores all prompt templates used to interact with the Gemini LLM, organized by endpoint.
+*   **`trademark_core/llm.py`**: Manages interaction with the Google Vertex AI Gemini model. Loads prompts from markdown files in `data/prompts/`, combines them with few-shot examples from `data/examples/`, sends requests, parses structured JSON responses, and handles LLM API errors. Contains modular LLM generation functions for mark similarity and goods/services assessments.
+*   **`data/prompts/`**: Directory containing markdown files with prompt templates for each LLM function (mark similarity, goods/services likelihood, conceptual similarity, and case prediction).
+*   **`data/examples/`**: Directory containing few-shot examples for each prompt type, based on real UK IPO trademark opposition cases.
 *   **`tests/`**: Contains unit and integration tests.
 *   **`pyproject.toml` / `requirements.txt`**: Define project dependencies.
 *   **`.env.example` / `.env.yaml`**: Template and actual configuration for environment variables (GCP Project ID, API keys, etc.). **Sensitive files should not be committed to Git.**
@@ -407,7 +418,7 @@ trademark_prod/
     *   Copy `env.example` to a new file named `.env` (this file is gitignored).
     *   Fill in the required values in `.env`, especially:
         *   `GOOGLE_CLOUD_PROJECT`: Your GCP Project ID.
-        *   `GOOGLE_CLOUD_LOCATION`: The region for Vertex AI (e.g., `us-central1`).
+        *   `GOOGLE_CLOUD_LOCATION`: The region for Vertex AI (e.g., `global`).
     *   Ensure your environment is configured for Application Default Credentials (ADC) by running `gcloud auth application-default login`.
 6.  **Run Tests:**
     ```bash
@@ -474,7 +485,7 @@ Following the testing strategy, the project supports tests with real LLM calls t
 ```bash
 # First, ensure you have the necessary environment variables set:
 # - GOOGLE_CLOUD_PROJECT
-# - GOOGLE_CLOUD_LOCATION (default: us-central1)
+# - GOOGLE_CLOUD_LOCATION (default: global)
 # - GOOGLE_APPLICATION_CREDENTIALS (path to service account JSON)
 
 # Run all real LLM tests

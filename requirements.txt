@@ -1,26 +1,24 @@
-functions-framework
+functions-framework==3.8.3
 
 # Core dependencies
-fastapi
-uvicorn
-pydantic
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
 firebase-admin
-python-dotenv
+python-dotenv==1.1.1
+pyjwt==2.10.1
 
 # Trademark similarity calculations
-python-levenshtein
-metaphone
+python-levenshtein==0.27.1
 
 # Google Cloud & Vertex AI dependencies
-google-genai
-google-cloud-core
-google-api-core
+google-genai==1.26.0
+google-cloud-core==2.4.3
+google-api-core==2.25.1
 google-cloud-aiplatform
+google-cloud-storage
 
 # Client utilities
-httpx
+httpx==0.28.1
 
-# Development dependencies
-pytest
-pytest-asyncio
-ruff 
+# Development dependencies are in requirements-dev.txt

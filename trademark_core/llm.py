@@ -9,29 +9,32 @@ import json
 import logging
 import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 from google import genai
 from google.api_core.exceptions import GoogleAPIError
 from google.genai import types
 from pydantic import ValidationError
+from google.cloud import storage
 
-from trademark_core import models, prompts
+from trademark_core import models
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Default model configuration
-DEFAULT_MODEL = "gemini-2.5-flash-preview-04-17"
-DEFAULT_TEMPERATURE = 0.2
+DEFAULT_MODEL = "gemini-2.5-pro"
+DEFAULT_TEMPERATURE = 0.5
 DEFAULT_TEMPERATURE_INCREMENT = 0.1
 DEFAULT_TOP_P = 0.95
 DEFAULT_TOP_K = 40
-DEFAULT_MAX_OUTPUT_TOKENS = 8192
+DEFAULT_MAX_OUTPUT_TOKENS = 16000
 
 # Environment variable to control exception raising in tests
 # When set to "1", LLM and batch processing functions will raise exceptions
+
 # immediately for easier debugging in test environments.
 # Otherwise, they will log errors and attempt to continue or return partial results.
 TEST_RAISE_EXCEPTIONS_ENV_VAR = "TEST_RAISE_EXCEPTIONS"
@@ -39,22 +42,28 @@ TEST_RAISE_EXCEPTIONS_ENV_VAR = "TEST_RAISE_EXCEPTIONS"
 # Initialize Generative AI client with Vertex AI
 try:
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
 
     # Using Vertex AI with Application Default Credentials (ADC)
     if not project_id:
         raise ValueError("GOOGLE_CLOUD_PROJECT environment variable is required for Vertex AI")
 
     logger.info("Configuring Google Generative AI with Vertex AI")
+    # Initialize the client once at the module level
     client = genai.Client(
         vertexai=True,
         project=project_id,
         location=location,
-        http_options=types.HttpOptions(api_version="v1"),
+        http_options=types.HttpOptions(api_version="v1"), # Retained HttpOptions as per original
     )
-    logger.info(f"Successfully initialized Vertex AI client in {location}")
+    logger.info(f"Successfully configured Vertex AI SDK in {location} for project {project_id}")
+
+    # Initialize GCS client
+    gcs_client = storage.Client(project=project_id)
+    BRANDABILITY_BUCKET_NAME = "brandability-bucket"
+
 except Exception as e:
-    logger.error(f"Failed to initialize Google Generative AI client: {str(e)}")
+    logger.error(f"Failed to initialize Google Generative AI client or GCS client: {str(e)}")
     raise
 
 
@@ -69,6 +78,81 @@ def _should_raise_exceptions_for_tests() -> bool:
         f"Checking {TEST_RAISE_EXCEPTIONS_ENV_VAR}: got '{env_value}', so should_raise is {should_raise}"
     )
     return should_raise
+
+
+# --- Prompt Loading Functions ---
+def _load_content_from_gcs(gcs_path: str) -> str:
+    """
+    Load content from a GCS bucket.
+
+    Args:
+        gcs_path: The path to the object within the bucket (e.g., "prompts/file.md")
+
+    Returns:
+        The content as a string
+
+    Raises:
+        google.cloud.exceptions.NotFound: If the blob doesn't exist.
+        Exception: For other GCS errors.
+    """
+    try:
+        bucket = gcs_client.bucket(BRANDABILITY_BUCKET_NAME)
+        blob = bucket.blob(gcs_path)
+        content = blob.download_as_text(encoding="utf-8")
+        logger.debug(f"Loaded content from gs://{BRANDABILITY_BUCKET_NAME}/{gcs_path}")
+        return content
+    except storage.exceptions.NotFound:
+        logger.error(f"GCS object not found: gs://{BRANDABILITY_BUCKET_NAME}/{gcs_path}")
+        raise
+    except Exception as e:
+        logger.error(f"Error loading content from gs://{BRANDABILITY_BUCKET_NAME}/{gcs_path}: {str(e)}")
+        raise
+
+
+def _combine_prompt_with_examples(prompt_template: str, examples_content: str) -> str:
+    """
+    Combine a prompt template with few-shot examples.
+    
+    Args:
+        prompt_template: The main prompt template
+        examples_content: The few-shot examples content
+        
+    Returns:
+        Combined prompt with examples appended
+    """
+    # Extract just the examples section from the markdown file
+    # Look for content between <few_shot_examples> tags
+    import re
+    examples_match = re.search(r'<few_shot_examples>.*?</few_shot_examples>', 
+                              examples_content, re.DOTALL)
+    if examples_match:
+        examples_section = examples_match.group(0)
+        # Append examples to the prompt
+        combined = f"{prompt_template}\n\n{examples_section}"
+        return combined
+    else:
+        logger.warning("No <few_shot_examples> section found in examples file")
+        return prompt_template
+
+
+# Load prompt templates and examples at module initialization
+try:
+    # Load prompts from GCS
+    MARK_SIMILARITY_PROMPT_TEMPLATE = _load_content_from_gcs("prompts/mark_similarity_prompt.md")
+    GS_LIKELIHOOD_PROMPT_TEMPLATE = _load_content_from_gcs("prompts/gs_likelihood_prompt.md")
+    CONCEPTUAL_SIMILARITY_PROMPT_TEMPLATE = _load_content_from_gcs("prompts/conceptual_similarity_prompt.md")
+    CASE_PREDICTION_PROMPT_TEMPLATE = _load_content_from_gcs("prompts/case_prediction_prompt.md")
+
+    # Load examples from GCS
+    MARK_SIMILARITY_EXAMPLES = _load_content_from_gcs("examples/mark_similarity_examples.md")
+    GS_LIKELIHOOD_EXAMPLES = _load_content_from_gcs("examples/gs_likelihood_examples.md")
+    CONCEPTUAL_SIMILARITY_EXAMPLES = _load_content_from_gcs("examples/conceptual_similarity_examples.md")
+    CASE_PREDICTION_EXAMPLES = _load_content_from_gcs("examples/case_prediction_examples.md")
+
+    logger.info("Successfully loaded all prompts and examples from GCS")
+except Exception as e:
+    logger.error(f"Failed to load prompts or examples from GCS: {str(e)}")
+    raise
 
 
 # --- Mark Similarity Assessment Function ---
@@ -111,13 +195,17 @@ async def generate_mark_similarity_assessment(
         if model:
             logger.info(f"{log_prefix} Using custom model: {model}")
 
-        # Build the prompt using the template
-        prompt = prompts.MARK_SIMILARITY_PROMPT_TEMPLATE.format(
-            applicant_wordmark=applicant_mark.wordmark,
-            opponent_wordmark=opponent_mark.wordmark,
-            visual_score=visual_score,
-            aural_score=aural_score,
+        # Combine prompt template with examples
+        prompt_with_examples = _combine_prompt_with_examples(
+            MARK_SIMILARITY_PROMPT_TEMPLATE, 
+            MARK_SIMILARITY_EXAMPLES
         )
+        
+        # Build the prompt using manual replacement to avoid JSON brace conflicts
+        prompt = prompt_with_examples.replace("{applicant_wordmark}", applicant_mark.wordmark)
+        prompt = prompt.replace("{opponent_wordmark}", opponent_mark.wordmark)
+        prompt = prompt.replace("{visual_score}", f"{visual_score:.2f}")
+        prompt = prompt.replace("{aural_score}", f"{aural_score:.2f}")
 
         # Call the LLM with the structured output schema
         result = await generate_structured_content(
@@ -131,8 +219,15 @@ async def generate_mark_similarity_assessment(
             model=model,
         )
 
-        # Validate the result
-        validated_assessment = models.MarkSimilarityOutput.model_validate(result.model_dump())
+        # Validate the result and ensure reasoning is not None if provided
+        result_dict = result.model_dump()
+        
+        # Ensure reasoning field has a fallback if None (even though it's optional in this model)
+        if result_dict.get('reasoning') is None:
+            result_dict['reasoning'] = "Reasoning could not be generated for this mark similarity assessment."
+            logger.warning(f"{log_prefix} LLM returned None for reasoning field, using fallback")
+        
+        validated_assessment = models.MarkSimilarityOutput.model_validate(result_dict)
         logger.info(
             f"{log_prefix} Successfully generated with overall similarity: {validated_assessment.overall}"
         )
@@ -188,17 +283,21 @@ async def generate_gs_likelihood_assessment(
         if model:
             logger.info(f"{log_prefix} Using custom model: {model}")
 
-        # Build the prompt using the template
-        prompt = prompts.GS_LIKELIHOOD_PROMPT_TEMPLATE.format(
-            applicant_term=applicant_good.term,
-            applicant_nice_class=applicant_good.nice_class,
-            opponent_term=opponent_good.term,
-            opponent_nice_class=opponent_good.nice_class,
-            mark_visual=mark_similarity.visual,
-            mark_aural=mark_similarity.aural,
-            mark_conceptual=mark_similarity.conceptual,
-            mark_overall=mark_similarity.overall,
+        # Combine prompt template with examples
+        prompt_with_examples = _combine_prompt_with_examples(
+            GS_LIKELIHOOD_PROMPT_TEMPLATE,
+            GS_LIKELIHOOD_EXAMPLES
         )
+        
+        # Build the prompt using manual replacement to avoid JSON brace conflicts
+        prompt = prompt_with_examples.replace("{applicant_term}", applicant_good.term)
+        prompt = prompt.replace("{applicant_nice_class}", str(applicant_good.nice_class))
+        prompt = prompt.replace("{opponent_term}", opponent_good.term)
+        prompt = prompt.replace("{opponent_nice_class}", str(opponent_good.nice_class))
+        prompt = prompt.replace("{mark_visual}", mark_similarity.visual)
+        prompt = prompt.replace("{mark_aural}", mark_similarity.aural)
+        prompt = prompt.replace("{mark_conceptual}", mark_similarity.conceptual)
+        prompt = prompt.replace("{mark_overall}", mark_similarity.overall)
 
         # Call the LLM with the structured output schema
         result = await generate_structured_content(
@@ -239,7 +338,14 @@ async def _get_conceptual_similarity_score_from_llm(mark1: str, mark2: str) -> f
     Calculate conceptual similarity score between two wordmarks using Gemini with structured output.
     In test mode (TEST_RAISE_EXCEPTIONS=1), exceptions are propagated for strict error handling tests.
     """
-    prompt = prompts.CONCEPTUAL_SIMILARITY_PROMPT_TEMPLATE.format(mark1=mark1, mark2=mark2)
+    # Combine prompt template with examples
+    prompt_with_examples = _combine_prompt_with_examples(
+        CONCEPTUAL_SIMILARITY_PROMPT_TEMPLATE,
+        CONCEPTUAL_SIMILARITY_EXAMPLES
+    )
+    
+    # Replace placeholders manually to avoid JSON brace conflicts
+    prompt = prompt_with_examples.replace("{mark1}", mark1).replace("{mark2}", mark2)
 
     try:
         logger.debug(f"Calculating conceptual similarity score: '{mark1}' vs '{mark2}'")
@@ -281,7 +387,7 @@ async def generate_structured_content(
     model: str = None,
 ) -> Any:
     """
-    Make a standardized LLM call with structured output.
+    Make a standardized LLM call with structured output and reasoning capabilities.
 
     Args:
         prompt: The prompt to send to the LLM
@@ -316,14 +422,6 @@ async def generate_structured_content(
             response_schema=schema,  # Pass the Pydantic class directly as recommended in the docs
         )
 
-        # Create a new client instance every time to avoid event loop issues
-        local_client = genai.Client(
-            vertexai=True,
-            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
-            http_options=types.HttpOptions(api_version="v1"),
-        )
-
         # Log the schema being used for debugging
         schema_name = schema.__name__ if hasattr(schema, "__name__") else str(schema)
         logger.info(
@@ -338,8 +436,11 @@ async def generate_structured_content(
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             try:
-                response = await local_client.aio.models.generate_content(
-                    model=model or DEFAULT_MODEL, contents=prompt, config=config
+                # Use the client to generate content with the correct syntax
+                response = client.models.generate_content(
+                    model=model or DEFAULT_MODEL,
+                    contents=prompt, 
+                    config=config
                 )
 
                 # Log the raw response for debugging - use INFO level to ensure it appears in logs
@@ -359,16 +460,30 @@ async def generate_structured_content(
 
                 # Check if we have a valid response
                 if response.parsed:
+                    # Additional safety check: ensure reasoning fields are not None if the schema expects them
+                    parsed_result = response.parsed
+                    if hasattr(parsed_result, 'model_dump'):
+                        result_dict = parsed_result.model_dump()
+                        
+                        # Check if this model has a reasoning field that should not be None
+                        if 'reasoning' in result_dict:
+                            # For OppositionOutcome, reasoning is required (not optional)
+                            if schema.__name__ == 'OppositionOutcome' and not result_dict.get('reasoning'):
+                                logger.warning(f"{request_context} OppositionOutcome reasoning was None/empty, applying fallback")
+                                result_dict['reasoning'] = "Reasoning could not be generated."
+                                # Recreate the parsed result with the fixed reasoning
+                                parsed_result = schema.model_validate(result_dict)
+                    
                     parsed_str = json.dumps(
-                        response.parsed.model_dump()
-                        if hasattr(response.parsed, "model_dump")
-                        else response.parsed,
+                        parsed_result.model_dump()
+                        if hasattr(parsed_result, "model_dump")
+                        else parsed_result,
                         indent=2,
                     )
                     # Truncate very long responses in logs
                     parsed_log = parsed_str[:5000] + "..." if len(parsed_str) > 5000 else parsed_str
                     logger.info(f"{request_context} PARSED RESPONSE: {parsed_log}")
-                    return response.parsed
+                    return parsed_result
 
                 # If we reach here, no valid data was returned
                 logger.warning(
@@ -525,3 +640,130 @@ async def batch_process_goods_services(
     )
 
     return processed_results
+
+
+# New function for comprehensive case prediction
+async def generate_case_prediction(
+    mark_similarity: models.MarkSimilarityOutput,
+    goods_services_likelihoods: list[models.GoodServiceLikelihoodOutput],
+    model: str = None,
+) -> models.OppositionOutcome:
+    """
+    Generate a comprehensive case prediction using all assessment data.
+    
+    This function uses an LLM to analyse the complete case data and provide
+    a nuanced prediction with appropriate confidence levels based on legal
+    principles and precedent.
+    
+    Args:
+        mark_similarity: The mark similarity assessment
+        goods_services_likelihoods: List of all G/S likelihood assessments
+        model: Optional model override to use for the assessment
+        
+    Returns:
+        OppositionOutcome: Structured prediction with result, confidence, and reasoning
+        
+    Raises:
+        GoogleAPIError: If there's an issue with the Gemini API
+        ValueError: If the LLM returns invalid data
+    """
+    # Generate a unique ID for this request
+    request_id = str(uuid.uuid4())[:8]
+    log_prefix = f"[Case Prediction {request_id}]"
+    
+    try:
+        logger.info(f"{log_prefix} Starting comprehensive case prediction")
+        if model:
+            logger.info(f"{log_prefix} Using custom model: {model}")
+        
+        # Calculate statistics
+        total_pairs = len(goods_services_likelihoods)
+        confused_pairs = sum(1 for gs in goods_services_likelihoods if gs.likelihood_of_confusion)
+        confused_percentage = (confused_pairs / total_pairs * 100) if total_pairs > 0 else 0
+        
+        direct_confusion_count = sum(
+            1 for gs in goods_services_likelihoods 
+            if gs.likelihood_of_confusion and gs.confusion_type == "direct"
+        )
+        indirect_confusion_count = sum(
+            1 for gs in goods_services_likelihoods 
+            if gs.likelihood_of_confusion and gs.confusion_type == "indirect"
+        )
+        
+        avg_similarity = (
+            sum(gs.similarity_score for gs in goods_services_likelihoods) / total_pairs
+            if total_pairs > 0 else 0
+        )
+        
+        # Format goods/services summary
+        gs_summary_lines = []
+        for i, gs in enumerate(goods_services_likelihoods, 1):
+            confusion_str = "No confusion"
+            if gs.likelihood_of_confusion:
+                confusion_str = f"{gs.confusion_type.capitalize()} confusion likely"
+            
+            gs_summary_lines.append(
+                f"    {i}. G/S Similarity: {gs.similarity_score:.2f} | "
+                f"Competitive: {gs.are_competitive} | Complementary: {gs.are_complementary} | "
+                f"{confusion_str}"
+            )
+        
+        goods_services_summary = "\n".join(gs_summary_lines)
+        
+        # Combine prompt template with examples
+        prompt_with_examples = _combine_prompt_with_examples(
+            CASE_PREDICTION_PROMPT_TEMPLATE,
+            CASE_PREDICTION_EXAMPLES
+        )
+        
+        # Build the prompt using manual replacement to avoid JSON brace conflicts
+        prompt = prompt_with_examples.replace("{mark_visual}", mark_similarity.visual)
+        prompt = prompt.replace("{mark_aural}", mark_similarity.aural)
+        prompt = prompt.replace("{mark_conceptual}", mark_similarity.conceptual)
+        prompt = prompt.replace("{mark_overall}", mark_similarity.overall)
+        prompt = prompt.replace("{mark_reasoning}", mark_similarity.reasoning or "No specific reasoning provided")
+        prompt = prompt.replace("{goods_services_summary}", goods_services_summary)
+        prompt = prompt.replace("{total_pairs}", str(total_pairs))
+        prompt = prompt.replace("{confused_pairs}", str(confused_pairs))
+        prompt = prompt.replace("{confused_percentage}", f"{confused_percentage:.1f}")
+        prompt = prompt.replace("{direct_confusion_count}", str(direct_confusion_count))
+        prompt = prompt.replace("{indirect_confusion_count}", str(indirect_confusion_count))
+        prompt = prompt.replace("{avg_similarity}", f"{avg_similarity:.2f}")
+        
+        # Call the LLM
+        result = await generate_structured_content(
+            prompt=prompt,
+            schema=models.OppositionOutcome,
+            temperature=0.3,  # Lower temperature for more consistent legal reasoning
+            top_p=DEFAULT_TOP_P,
+            top_k=DEFAULT_TOP_K,
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            request_context=log_prefix,
+            model=model,
+        )
+        
+        # Validate the result and ensure reasoning is never None
+        result_dict = result.model_dump()
+        
+        # Critical: OppositionOutcome.reasoning is required, never allow None
+        if not result_dict.get('reasoning'):
+            result_dict['reasoning'] = "Reasoning could not be generated for this case prediction."
+            logger.warning(f"{log_prefix} LLM returned None/empty for reasoning field, using fallback")
+        
+        validated_outcome = models.OppositionOutcome.model_validate(result_dict)
+        logger.info(
+            f"{log_prefix} Generated prediction: {validated_outcome.result} "
+            f"(confidence: {validated_outcome.confidence:.2f})"
+        )
+        
+        return validated_outcome
+        
+    except GoogleAPIError as e:
+        logger.error(f"{log_prefix} Google API error: {str(e)}")
+        raise
+    except ValidationError as e:
+        logger.error(f"{log_prefix} Validation failed: {e}")
+        raise ValueError(f"LLM output failed validation: {e}")
+    except Exception as e:
+        logger.error(f"{log_prefix} Unexpected error: {str(e)}")
+        raise

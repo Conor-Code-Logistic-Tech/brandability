@@ -1,17 +1,33 @@
-.gcloudignore
-.git
+# Exclude Git files
+.git/
 .gitignore
-node_modules
-.env
-.env.local
-.env.yaml
-Procfile
-pyproject.toml
+
+# Exclude Docker files
+.dockerignore
+
+# Exclude virtual environment
 venv/
 .venv/
-ruff_cache/
-pytest_cache/
-api/__pycache__/
-trademark_core/__pycache__/
-model-context/
-.cursorrules
+
+# Exclude Python cache
+__pycache__/
+*.pyc
+
+# Exclude development dependencies and tools
+.vscode/
+.idea/
+.DS_Store
+*.lock
+
+# Exclude documentation
+docs/
+
+# Exclude tests and test data
+tests/
+
+# Exclude local environment files
+.env
+.env.yaml
+
+# Exclude markdown files
+*.md

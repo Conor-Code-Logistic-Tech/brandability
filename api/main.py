@@ -4,7 +4,9 @@ FastAPI application for trademark similarity prediction.
 This module provides HTTP endpoints for comparing trademarks and predicting
 opposition outcomes using LLM-powered similarity analysis and reasoning.
 """
-
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import firebase_admin
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware  # Import CORS middleware
@@ -15,6 +17,7 @@ from trademark_core.llm import (
     batch_process_goods_services,
     generate_gs_likelihood_assessment,
     generate_mark_similarity_assessment,
+    generate_case_prediction,
 )
 
 # Import similarity calculation functions
@@ -196,7 +199,8 @@ async def case_prediction(
     Generate the final case prediction based on mark similarity and goods/services assessments.
 
     This endpoint aggregates the results from mark_similarity and multiple gs_similarity calls,
-    then determines the final opposition outcome using the UK/EU trademark opposition principles.
+    then uses an LLM to determine the final opposition outcome with nuanced confidence scoring
+    based on UK/EU trademark opposition principles.
 
     Requires Firebase Authentication.
 
@@ -208,44 +212,10 @@ async def case_prediction(
         CasePredictionResult: Complete prediction including the final opposition outcome
     """
     try:
-        # Determine opposition outcome based on aggregation of G/S likelihoods
-        all_confusion = all(gs.likelihood_of_confusion for gs in request.goods_services_likelihoods)
-        any_confusion = any(gs.likelihood_of_confusion for gs in request.goods_services_likelihoods)
-
-        # Determine outcome category
-        if all_confusion:
-            result = "Opposition likely to succeed"
-            confidence = 0.9
-            reasoning = (
-                "All goods/services pairings showed a likelihood of confusion when considering "
-                f"the {request.mark_similarity.overall} mark similarity. Under UK/EU trademark law, "
-                "this indicates the opposition is likely to succeed across all specifications."
-            )
-        elif not any_confusion:
-            result = "Opposition likely to fail"
-            confidence = 0.9
-            reasoning = (
-                "None of the goods/services pairings showed a likelihood of confusion, even when considering "
-                f"the {request.mark_similarity.overall} mark similarity between the marks. Under UK/EU trademark law, "
-                "this indicates the opposition is likely to fail entirely."
-            )
-        else:
-            result = "Opposition may partially succeed"
-            confused_count = sum(
-                1 for gs in request.goods_services_likelihoods if gs.likelihood_of_confusion
-            )
-            total_count = len(request.goods_services_likelihoods)
-            confidence = 0.7
-            reasoning = (
-                f"{confused_count} out of {total_count} goods/services pairings showed a likelihood of confusion "
-                f"when considering the {request.mark_similarity.overall} mark similarity. Under UK/EU trademark law, "
-                "this indicates the opposition may partially succeed, limited to those goods/services where "
-                "confusion is likely."
-            )
-
-        # Construct the outcome
-        opposition_outcome = models.OppositionOutcome(
-            result=result, confidence=confidence, reasoning=reasoning
+        # Use the new LLM-based prediction function
+        opposition_outcome = await generate_case_prediction(
+            mark_similarity=request.mark_similarity,
+            goods_services_likelihoods=request.goods_services_likelihoods,
         )
 
         # Construct and return the complete prediction
@@ -260,3 +230,8 @@ async def case_prediction(
     except Exception as e:
         # Handle any errors
         raise HTTPException(status_code=500, detail=f"Error generating case prediction: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)

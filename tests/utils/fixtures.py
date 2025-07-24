@@ -102,8 +102,8 @@ DISSIMILAR_ASSESSMENT = models.MarkSimilarityOutput(
 
 TEST_MODELS = {
     "default": None,  # Use the system default
-    "flash": "gemini-2.5-flash-preview-04-17",
-    "pro": "gemini-2.5-flash-preview-04-17",
+    "flash": "gemini-2.0-flash-001",
+    "pro": "gemini-2.0-flash-001",
 }
 
 

@@ -533,31 +533,40 @@ def apply_llm_mocks():
     """
     Patch all LLM-related functions for testing.
 
-    This function applies patches to all the LLM functions that would normally
-    call external APIs to instead use mock implementations that respect side_effect.
+    This function returns a context manager that applies patches to all the LLM functions 
+    that would normally call external APIs to instead use mock implementations.
     """
+    from contextlib import ExitStack
+    
     # Path to the llm module to be patched
     llm_module_path = "trademark_core.llm"
 
-    # Apply patches directly to the module functions
-    patch(
+    # Create an exit stack to manage multiple patches
+    stack = ExitStack()
+    
+    # Apply patches using the context manager
+    stack.enter_context(patch(
         f"{llm_module_path}.generate_mark_similarity_assessment",
         MockLLM.mock_mark_similarity_assessment,
-    ).start()
+    ))
 
-    patch(
+    stack.enter_context(patch(
         f"{llm_module_path}.generate_gs_likelihood_assessment",
         MockLLM.mock_gs_likelihood_assessment,
-    ).start()
+    ))
 
-    patch(f"{llm_module_path}.generate_structured_content", MockLLM.mock_structured_content).start()
+    stack.enter_context(patch(
+        f"{llm_module_path}.generate_structured_content", 
+        MockLLM.mock_structured_content
+    ))
 
-    patch(
+    stack.enter_context(patch(
         f"{llm_module_path}._get_conceptual_similarity_score_from_llm",
         MockLLM.mock_conceptual_similarity_score,
-    ).start()
+    ))
 
     print("Applied LLM mocks for testing")
+    return stack
 
 
 # The tear down for mocks should be handled by pytest fixtures (see conftest.py)

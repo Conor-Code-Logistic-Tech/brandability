@@ -1,0 +1,22 @@
+.dockerignore
+Dockerfile
+.git
+.gitignore
+.env.yaml
+.env.example
+.cursor*
+firebase-debug.log
+README.md
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+# Add other files/directories that are not needed in the runtime container
+# For example, local test data, documentation not needed at runtime, etc.
+# tests/ # If your tests are not run inside the container after build
+docs/
+model-context/ # If this is not needed at runtime
+# data/ # Commented out as we are uploading this to GCS and not including in image 
